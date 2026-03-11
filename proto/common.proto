@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package common.v1;
+
+option go_package = "github.com/DgHnG36/lib-management-system/shared/go/v1;commonv1";
+
+message PaginationRequest {
+    int32 page = 1;
+    int32 limit = 2;
+    string sort_by = 3;
+    bool is_desc = 4;
+}
+
+message BaseResponse {
+    int32 status = 1;
+    string message = 2;
+}

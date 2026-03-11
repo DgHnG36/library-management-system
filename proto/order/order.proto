@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package order.v1;
+
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+import "user/user.proto";
+import "book/book.proto";
+
+option go_package = "github.com/DgHnG36/lib-management-system/shared/go/v1/order;orderv1";
+
+enum OrderStatus {
+    STATUS_UNSPECIFIED = 0;
+    PENDING = 1;
+    APPROVED = 2;
+    BORROWED = 3;
+    RETURNED = 4;
+    CANCELED = 5;
+    OVERDUE = 6;
+}
+
+service OrderService {
+    rpc CreateOrder(CreateOrderRequest) returns (OrderResponse);
+    rpc GetOrder(GetOrderRequest) returns (OrderResponse);
+    rpc ListMyOrders(ListMyOrdersRequest) returns (ListOrdersResponse);
+    rpc CancelOrder(CancelOrderRequest) returns (OrderResponse);
+    rpc ListAllOrders(ListAllOrdersRequest) returns (ListOrdersResponse);
+    rpc UpdateOrderStatus(UpdateOrderStatusRequest) returns (OrderResponse);
+}
+
+message Order {
+    string id = 1;
+    user.v1.User borrower = 2;
+    repeated book.v1.Book borrowed_books = 3;
+    OrderStatus status = 4;
+    google.protobuf.Timestamp borrow_date = 5;
+    google.protobuf.Timestamp due_date = 6;
+    google.protobuf.Timestamp return_date = 7;
+    int32 penalty_amount = 8;
+    string note = 9;
+    google.protobuf.Timestamp created_at = 10;
+    google.protobuf.Timestamp updated_at = 11;
+}
+
+message OrderResponse {
+    Order order = 1;
+}
+
+message CreateOrderRequest {
+    string user_id = 1;
+    repeated string book_ids = 2;
+    int32 borrow_days = 3;
+}
+
+message GetOrderRequest {
+    string order_id = 1;
+}
+
+message ListMyOrdersRequest {
+    common.v1.PaginationRequest pagination = 1;
+    string user_id = 2;
+    OrderStatus filter_status = 3;
+}
+
+message ListAllOrdersRequest {
+    common.v1.PaginationRequest pagination = 1;
+    OrderStatus filter_status = 2;
+    string search_user_id = 3;
+}
+
+message ListOrdersResponse {
+    repeated Order orders = 1;
+    int32 total_count = 2;
+}
+
+message CancelOrderRequest {
+    string order_id = 1;
+    string user_id = 2;
+    string cancel_reason = 3;
+}
+
+message UpdateOrderStatusRequest {
+    string order_id = 1;
+    OrderStatus new_status = 2;
+    string note = 3;
+}

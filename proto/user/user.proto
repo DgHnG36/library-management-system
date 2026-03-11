@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package user.v1;
+
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+option go_package = "github.com/DgHnG36/lib-management-system/shared/go/v1/user;userv1";
+
+enum UserRole {
+    GUEST = 0;
+    REGISTERED_USER = 1;
+    MANAGER = 2;
+    ADMIN = 3;
+}
+
+service UserService {
+    rpc Register(RegisterRequest) returns (RegisterResponse);
+    rpc Login(LoginRequest) returns (LoginResponse);
+    rpc GetProfile(GetProfileRequest) returns (UserProfileResponse);
+    rpc UpdateProfile(UpdateProfileRequest) returns (UserProfileResponse);
+    rpc UpdateVIPAccount(UpdateVIPAccountRequest) returns (UpdateVIPAccountResponse);
+    rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+    rpc DeleteUsers(DeleteUsersRequest) returns (common.v1.BaseResponse);
+}
+
+message User {
+    string id = 1;
+    string username = 2;
+    string email = 3;
+    string phone_number = 4;
+    UserRole role = 5;
+    bool is_vip = 6;
+    google.protobuf.Timestamp created_at = 7;
+    google.protobuf.Timestamp last_updated = 8;
+    bool is_active = 9;
+}
+
+message RegisterRequest {
+    string username = 1;
+    string password = 2;
+    string email = 3;
+    string phone_number = 4;
+}
+
+message RegisterResponse {
+    int32 status = 1;
+    string message = 2;
+    string user_id = 3;
+}
+
+message LoginRequest {
+    oneof identifier {
+        string username = 1;
+        string email = 2;
+    }
+    string password = 3;
+}
+
+message LoginResponse {
+    int32 status = 1;
+    string message = 2;
+    string token = 3;
+    User user = 4;
+}
+
+message UserProfileResponse {
+    User user = 1;
+}
+
+message GetProfileRequest {
+    string id = 1;
+}
+
+message UpdateProfileRequest {
+    string id = 1;
+    string username = 2;
+    string email = 3;
+    string phone_number = 4;
+}
+
+message UpdateVIPAccountRequest {
+    string id = 1;
+    bool is_vip = 2;
+}
+
+message UpdateVIPAccountResponse {
+    int32 status = 1;
+    string message = 2;
+    bool current_vip_status = 3;
+}
+
+message ListUsersRequest {
+    common.v1.PaginationRequest pagination = 1;
+    UserRole role = 2;
+}
+
+message ListUsersResponse {
+    repeated User users = 1;
+    int32 total_count = 2;
+}
+
+message DeleteUsersRequest {
+    repeated string ids = 1;
+}

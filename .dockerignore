@@ -1,0 +1,36 @@
+# OS/IDE
+.DS_Store
+.idea/
+.Thumbs.db
+.vscode/
+
+# PYTHON
+venv/
+.venv/
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.venv
+venv
+
+# GO
+bin/
+dist/
+coverage.out
+*.test
+
+# LOGS AND LOCAL OUTPUT
+**/*.log
+**/*_results.json
+coverage.out
+
+# LOCAL ENV
+.env
+.env.*
+docker-compose*.yaml
+
+# LOCAL DIRECTORY 
+# ADD YOUR LOCAL DIRECTORY TO IGNORE HERE IF YOU HAVE ONE
+docs/
+.github/
+test/

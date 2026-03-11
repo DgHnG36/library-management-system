@@ -1,0 +1,41 @@
+# OS/IDE
+.DS_Store
+.idea/
+.Thumbs.db
+.vscode/
+
+# LOCAL ENV
+.env
+!.env.example
+.env.*
+
+# LOGS
+*.log
+
+# VIRTUAL PYTHON ENV
+venv/
+.venv/
+__pycache__/
+_pytest_cache__/
+
+# PYTHON
+*.pyc
+*.pyo
+
+# GO
+bin/
+dist/
+coverage.out
+*.test
+
+# BUILD ARTIFACTS
+build/
+tmp/
+*.tmp
+*.cache
+
+# DOCKER / KUBERNETES DEPLOYMENT
+*.pid
+
+# LOCAL DIRECTORY
+# ADD YOUR LOCAL DIRECTORY TO IGNORE HERE IF YOU HAVE ONE
