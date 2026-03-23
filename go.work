@@ -6,4 +6,8 @@ use (
 	./services/order-service
 	./services/user-service
 	./shared/go
+	./test/unit/test-gateway-service
+	./test/unit/test-user-service
+	./test/unit/test-book-service
+	./test/unit/test-order-service
 )

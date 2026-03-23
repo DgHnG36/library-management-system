@@ -1,4 +1,3 @@
-- Implement 5 services during 2 weeks
 - Test and fix during 1 week (Run docker and k8s)
 - Create CI/CD pipeline during 2 days
 - Deploy AWS during 2 days

@@ -143,7 +143,7 @@ class NotificationConsumer:
                     on_message_callback=self.on_message
                 )
                 logger.info("Notification service started, waiting for events...")
-                print(f"""
+                print(fr"""
                      _   _  ___ _____ ___     ____  _____ ______     _____ ____ _____ 
                     | \ | |/ _ \_   _|_ _|   / ___|| ____|  _ \ \   / /_ _/ ___| ____|
                     |  \| | | | || |  | |____\___ \|  _| | |_) \ \ / / | | |   |  _|  

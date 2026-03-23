@@ -60,7 +60,7 @@ func (s *OrderService) CreateOrder(ctx context.Context, userID string, bookIDs [
 		}(bookID)
 	}
 
-	for range results {
+	for i := 0; i < len(bookIDs); i++ {
 		r := <-results
 		if r.err != nil {
 			return nil, status.Error(codes.FailedPrecondition, r.err.Error())
@@ -97,11 +97,11 @@ func (s *OrderService) CreateOrder(ctx context.Context, userID string, bookIDs [
 	for _, bookID := range bookIDs {
 		go func(bID string) {
 			_, err := s.bookClient.UpdateBookQuantity(ctx, &bookv1.UpdateBookQuantityRequest{
-				BookId:       bookID,
+				BookId:       bID,
 				ChangeAmount: -1,
 			})
 			if err != nil {
-				s.logger.Error("Failed to update book quantity", err, logger.Fields{"book_id": bookID})
+				s.logger.Error("Failed to update book quantity", err, logger.Fields{"book_id": bID})
 			}
 		}(bookID)
 	}
