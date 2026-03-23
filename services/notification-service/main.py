@@ -29,7 +29,7 @@ class NotificationConsumer:
         self._channel = self._connection.channel()
         
         self._channel.exchange_declare(
-            exchange=config.NOTIFICATION_EXCHANGE,
+            exchange=config.RABBITMQ_EXCHANGE,
             exchange_type="topic",
             durable=True
         )
@@ -41,7 +41,7 @@ class NotificationConsumer:
         
         for routing_key in config.RABBITMQ_ROUTING_KEYS:
             self._channel.queue_bind(
-                exchange=config.NOTIFICATION_EXCHANGE,
+                exchange=config.RABBITMQ_EXCHANGE,
                 queue=config.RABBITMQ_QUEUE,
                 routing_key=routing_key
             )
@@ -94,7 +94,7 @@ class NotificationConsumer:
                 
         self.email_service.send_order_created(
             to_email=user.email,
-            user_name=user.name,
+            username=user.name,
             order_id=order_id,
             book_titles=book_titles,
             due_date=due_date
@@ -111,7 +111,7 @@ class NotificationConsumer:
         
         self.email_service.send_order_canceled(
             to_email=user.email,
-            user_name=user.name,
+            username=user.name,
             order_id=order_id
         )
         
@@ -120,14 +120,14 @@ class NotificationConsumer:
         order_id = payload.get("order_id")
         new_status = payload.get("new_status", "")
 
-        user = self._user_client.get_profile(user_id)
+        user = self.user_client.get_profile(user_id)
         if not user or not user.email:
             logger.warning(f"User {user_id} not found or has no email")
             return
 
-        self._email_service.send_order_status_updated(
+        self.email_service.send_order_status_updated(
             to_email=user.email,
-            username=user.username,
+            username=user.name,
             order_id=order_id,
             new_status=new_status,
         )
@@ -166,8 +166,8 @@ class NotificationConsumer:
             self._channel.stop_consuming()
         if self._connection and self._connection.is_open:
             self._connection.close()
-        self._user_client.close()
-        self._book_client.close()
+        self.user_client.close()
+        self.book_client.close()
         logger.info("Notification service stopped")
 
 consumer = NotificationConsumer()

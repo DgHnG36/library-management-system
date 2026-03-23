@@ -1,7 +1,7 @@
 import boto3
 from botocore.exceptions import ClientError
-from utils.config import config
-from utils.logger import logger
+from src.utils.config import config
+from src.utils.logger import logger
 
 class EmailService:
     def __init__(self):

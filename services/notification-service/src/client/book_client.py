@@ -2,10 +2,10 @@ import grpc
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../shared/python/v1"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared/python/v1"))
 
 from book import book_pb2, book_pb2_grpc
-from utils.logger import logger
+from src.utils.logger import logger
 
 class BookClient:
     def __init__(self, addr: str):

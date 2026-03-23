@@ -7,7 +7,10 @@ WORKDIR /app
 COPY go.work go.work.sum ./
 
 COPY shared/go/go.mod ./shared/go/
-COPY services/book-service/go.mod services/book-service/go.sum ./services/book-service/
+COPY services/book-service/go.mod ./services/book-service/
+COPY services/gateway-service/go.mod ./services/gateway-service/
+COPY services/order-service/go.mod ./services/order-service/
+COPY services/user-service/go.mod ./services/user-service/
 
 RUN go work sync
 

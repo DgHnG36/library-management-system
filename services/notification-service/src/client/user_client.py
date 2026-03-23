@@ -2,10 +2,10 @@ import grpc
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../shared/python/v1"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared/python/v1"))
 
 from user import user_pb2, user_pb2_grpc
-from utils.logger import logger
+from src.utils.logger import logger
 
 class UserClient:
     def __init__(self, addr: str):

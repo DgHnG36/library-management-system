@@ -63,7 +63,7 @@ func (s *OrderService) CreateOrder(ctx context.Context, userID string, bookIDs [
 	for range results {
 		r := <-results
 		if r.err != nil {
-			return nil, status.Errorf(codes.FailedPrecondition, r.err.Error())
+			return nil, status.Error(codes.FailedPrecondition, r.err.Error())
 		}
 	}
 

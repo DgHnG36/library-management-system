@@ -1,6 +1,7 @@
 import os
 
 class Config:
+    PORT: str = os.getenv("PORT", "8000")
     RABBITMQ_URL: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
     RABBITMQ_EXCHANGE: str = os.getenv("RABBITMQ_EXCHANGE", "order-event")
     RABBITMQ_QUEUE: str = os.getenv("RABBITMQ_QUEUE", "notification-queue")

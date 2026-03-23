@@ -1,4 +1,3 @@
-# ─── Build stage ─────────────────────────────────────────────────────────────
 FROM golang:1.25-alpine AS build
 
 RUN apk add --no-cache git
@@ -8,15 +7,14 @@ WORKDIR /app
 COPY go.work go.work.sum ./
 
 COPY shared/go/go.mod ./shared/go/
-COPY services/order-service/go.mod services/order-service/go.sum ./services/order-service/
+COPY services/order-service/go.mod ./services/order-service/
+COPY services/gateway-service/go.mod ./services/gateway-service/
+COPY services/book-service/go.mod ./services/book-service/
+COPY services/user-service/go.mod ./services/user-service/
 
 RUN go work sync
 
 COPY shared/ ./shared/
-COPY services/order-service/ ./services/order-service/
-
-WORKDIR /app
-COPY shared/go/ ./shared/go/
 COPY services/order-service/ ./services/order-service/
 
 WORKDIR /app/services/order-service
