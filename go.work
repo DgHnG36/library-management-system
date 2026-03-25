@@ -10,4 +10,6 @@ use (
 	./test/unit/test-user-service
 	./test/unit/test-book-service
 	./test/unit/test-order-service
+	./test/integration/test-gateway-service
+	./test/integration/test-user-service
 )
