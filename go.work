@@ -12,4 +12,6 @@ use (
 	./test/unit/test-order-service
 	./test/integration/test-gateway-service
 	./test/integration/test-user-service
+	./test/integration/test-book-service
+	./test/integration/test-order-service
 )

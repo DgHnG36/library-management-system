@@ -130,6 +130,29 @@ def load_main_module():
 
 
 class TestNotificationConsumerMain(unittest.TestCase):
+    def test_connect_declares_exchange_queue_bindings_and_qos(self):
+        module = load_main_module()
+        consumer = module.NotificationConsumer()
+
+        consumer.connect()
+
+        self.assertIsNotNone(consumer._connection)
+        self.assertIsNotNone(consumer._channel)
+        consumer._channel.exchange_declare.assert_called_once_with(
+            exchange=FakeConfig.RABBITMQ_EXCHANGE,
+            exchange_type="topic",
+            durable=True,
+        )
+        consumer._channel.queue_declare.assert_called_once_with(
+            queue=FakeConfig.RABBITMQ_QUEUE,
+            durable=True,
+        )
+        self.assertEqual(
+            len(FakeConfig.RABBITMQ_ROUTING_KEYS),
+            consumer._channel.queue_bind.call_count,
+        )
+        consumer._channel.basic_qos.assert_called_once_with(prefetch_count=1)
+
     def test_on_message_order_created_ack(self):
         module = load_main_module()
         consumer = module.NotificationConsumer()
@@ -173,6 +196,20 @@ class TestNotificationConsumerMain(unittest.TestCase):
         consumer.on_message(channel, method, None, b"{bad json")
 
         channel.basic_nack.assert_called_once_with(delivery_tag=12, requeue=False)
+        channel.basic_ack.assert_not_called()
+
+    def test_on_message_handler_exception_nack(self):
+        module = load_main_module()
+        consumer = module.NotificationConsumer()
+        consumer._handle_order_created = MagicMock(side_effect=RuntimeError("boom"))
+
+        channel = MagicMock()
+        method = SimpleNamespace(delivery_tag=13)
+        body = json.dumps({"event_type": "order.created", "payload": {"x": 1}}).encode()
+
+        consumer.on_message(channel, method, None, body)
+
+        channel.basic_nack.assert_called_once_with(delivery_tag=13, requeue=False)
         channel.basic_ack.assert_not_called()
 
     def test_handle_order_created_sends_email_with_books(self):
@@ -227,6 +264,16 @@ class TestNotificationConsumerMain(unittest.TestCase):
             order_id="o1",
         )
 
+    def test_handle_order_canceled_user_has_no_email_no_send(self):
+        module = load_main_module()
+        consumer = module.NotificationConsumer()
+
+        consumer.user_client.get_profile.return_value = SimpleNamespace(email="", name="Bob")
+
+        consumer._handle_order_canceled({"user_id": "u1", "order_id": "o1"})
+
+        consumer.email_service.send_order_canceled.assert_not_called()
+
     def test_handle_order_status_updated_sends_email(self):
         module = load_main_module()
         consumer = module.NotificationConsumer()
@@ -243,6 +290,18 @@ class TestNotificationConsumerMain(unittest.TestCase):
             order_id="o1",
             new_status="APPROVED",
         )
+
+    def test_handle_order_status_updated_user_missing_no_send(self):
+        module = load_main_module()
+        consumer = module.NotificationConsumer()
+
+        consumer.user_client.get_profile.return_value = None
+
+        consumer._handle_order_status_updated(
+            {"user_id": "u1", "order_id": "o1", "new_status": "APPROVED"}
+        )
+
+        consumer.email_service.send_order_status_updated.assert_not_called()
 
     def test_shutdown_closes_resources(self):
         module = load_main_module()

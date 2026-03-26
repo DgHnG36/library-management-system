@@ -162,6 +162,7 @@ func (m *MockBookServiceClient) UpdateBookQuantity(ctx context.Context, in *book
 
 type MockUserServiceClient struct {
 	users map[string]*userv1.User
+	err   error
 }
 
 func NewMockUserServiceClient() *MockUserServiceClient {
@@ -177,6 +178,9 @@ func (m *MockUserServiceClient) Login(ctx context.Context, in *userv1.LoginReque
 }
 
 func (m *MockUserServiceClient) GetProfile(ctx context.Context, in *userv1.GetProfileRequest, opts ...grpc.CallOption) (*userv1.UserProfileResponse, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
 	userID := in.GetId()
 	if user, exists := m.users[userID]; exists {
 		return &userv1.UserProfileResponse{User: user}, nil
@@ -350,4 +354,81 @@ func TestOrderService_CancelOrder_FailedPrecondition(t *testing.T) {
 	st, ok := status.FromError(err)
 	assert.True(t, ok)
 	assert.Equal(t, codes.FailedPrecondition, st.Code())
+}
+
+func TestOrderService_ListAllOrders_FilterByStatusAndUser(t *testing.T) {
+	service, repo, _, _ := newOrderServiceForTest()
+	repo.orders["1"] = &models.Order{ID: "1", UserID: "user-1", Status: models.StatusPending}
+	repo.orders["2"] = &models.Order{ID: "2", UserID: "user-1", Status: models.StatusApproved}
+	repo.orders["3"] = &models.Order{ID: "3", UserID: "user-2", Status: models.StatusPending}
+
+	orders, total, err := service.ListAllOrders(context.Background(), 1, 10, "", false, models.StatusPending, "user-1")
+
+	assert.NoError(t, err)
+	assert.Equal(t, int32(1), total)
+	assert.Len(t, orders, 1)
+	assert.Equal(t, "1", orders[0].ID)
+}
+
+func TestOrderService_GetOrder_UserServiceError(t *testing.T) {
+	service, repo, bookClient, userClient := newOrderServiceForTest()
+	repo.orders["order-1"] = &models.Order{
+		ID:     "order-1",
+		UserID: "user-1",
+		Status: models.StatusPending,
+		Books:  []models.OrderBook{{OrderID: "order-1", BookID: "book-1"}},
+	}
+	bookClient.books["book-1"] = &bookv1.Book{Id: "book-1", Title: "Book"}
+	userClient.err = status.Error(codes.Internal, "user svc unavailable")
+
+	order, user, books, err := service.GetOrder(context.Background(), "order-1")
+
+	assert.Error(t, err)
+	assert.Nil(t, order)
+	assert.Nil(t, user)
+	assert.Nil(t, books)
+	st, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.Internal, st.Code())
+}
+
+func TestOrderService_GetOrder_BookServiceError(t *testing.T) {
+	service, repo, _, userClient := newOrderServiceForTest()
+	repo.orders["order-1"] = &models.Order{
+		ID:     "order-1",
+		UserID: "user-1",
+		Status: models.StatusPending,
+		Books:  []models.OrderBook{{OrderID: "order-1", BookID: "book-missing"}},
+	}
+	userClient.users["user-1"] = &userv1.User{Id: "user-1", Username: "u1"}
+
+	order, user, books, err := service.GetOrder(context.Background(), "order-1")
+
+	assert.Error(t, err)
+	assert.Nil(t, order)
+	assert.Nil(t, user)
+	assert.Nil(t, books)
+	st, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.Internal, st.Code())
+}
+
+func TestOrderService_UpdateOrderStatus_ReturnedUpdatesPenalty(t *testing.T) {
+	service, repo, _, _ := newOrderServiceForTest()
+	dueDate := time.Now().UTC().AddDate(0, 0, -3)
+	repo.orders["order-1"] = &models.Order{
+		ID:      "order-1",
+		UserID:  "user-1",
+		Status:  models.StatusBorrowed,
+		DueDate: dueDate,
+		Books:   []models.OrderBook{{OrderID: "order-1", BookID: "book-1"}},
+	}
+
+	updated, err := service.UpdateOrderStatus(context.Background(), "order-1", models.StatusReturned, "returned")
+
+	assert.NoError(t, err)
+	assert.NotNil(t, updated)
+	assert.Equal(t, models.StatusReturned, updated.Status)
+	assert.GreaterOrEqual(t, updated.PenaltyAmount, int32(5))
+	assert.NotNil(t, updated.ReturnDate)
 }

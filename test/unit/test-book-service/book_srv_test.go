@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -12,6 +13,38 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+type FailingBookRepository struct {
+	err error
+}
+
+func (f *FailingBookRepository) FindByID(ctx context.Context, id string) (*models.Book, error) {
+	return nil, f.err
+}
+
+func (f *FailingBookRepository) FindByTitle(ctx context.Context, title string) (*models.Book, error) {
+	return nil, f.err
+}
+
+func (f *FailingBookRepository) List(ctx context.Context, page, limit int32, sortBy string, isDesc bool, searchQuery, category string) ([]*models.Book, int32, error) {
+	return nil, 0, f.err
+}
+
+func (f *FailingBookRepository) Create(ctx context.Context, books []*models.Book) error {
+	return f.err
+}
+
+func (f *FailingBookRepository) Update(ctx context.Context, book *models.Book) error {
+	return f.err
+}
+
+func (f *FailingBookRepository) UpdateAvailableQuantity(ctx context.Context, bookID string, changeAmount int32) (int32, error) {
+	return 0, f.err
+}
+
+func (f *FailingBookRepository) Delete(ctx context.Context, ids []string) error {
+	return f.err
+}
 
 type MockBookRepository struct {
 	books map[string]*models.Book
@@ -451,6 +484,46 @@ func TestBookService_CheckAvailability_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	_, _, err := service.CheckAvailability(ctx, "nonexistent")
+	assert.Error(t, err)
+	st, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.Internal, st.Code())
+}
+
+func TestBookService_ListBooks_DefaultPaginationWhenInvalid(t *testing.T) {
+	repo := NewMockBookRepository()
+	log := logger.DefaultNewLogger()
+	service := applications.NewBookService(repo, log)
+	ctx := context.Background()
+
+	repo.books["book-1"] = &models.Book{ID: "book-1", Title: "Book 1"}
+
+	results, total, err := service.ListBooks(ctx, 0, 0, "", false, "", "")
+	assert.NoError(t, err)
+	assert.Equal(t, int32(1), total)
+	assert.Len(t, results, 1)
+}
+
+func TestBookService_UpdateBookQuantity_Success(t *testing.T) {
+	repo := NewMockBookRepository()
+	log := logger.DefaultNewLogger()
+	service := applications.NewBookService(repo, log)
+	ctx := context.Background()
+
+	repo.books["book-1"] = &models.Book{ID: "book-1", AvailableQuantity: 4}
+
+	newQty, err := service.UpdateBookQuantity(ctx, "book-1", -1)
+	assert.NoError(t, err)
+	assert.Equal(t, int32(3), newQty)
+}
+
+func TestBookService_UpdateBookQuantity_InternalError(t *testing.T) {
+	repo := &FailingBookRepository{err: errors.New("db is down")}
+	log := logger.DefaultNewLogger()
+	service := applications.NewBookService(repo, log)
+	ctx := context.Background()
+
+	_, err := service.UpdateBookQuantity(ctx, "book-1", -1)
 	assert.Error(t, err)
 	st, ok := status.FromError(err)
 	assert.True(t, ok)

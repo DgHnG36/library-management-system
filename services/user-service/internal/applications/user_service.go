@@ -165,7 +165,7 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID, username, email
 	}
 
 	if username != "" && username != user.Username {
-		existing, err := s.userRepo.FindByUsername(ctx, user.Username)
+		existing, err := s.userRepo.FindByUsername(ctx, username)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to check username: %v", err)
 		}

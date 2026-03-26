@@ -198,3 +198,43 @@ func TestUserService_Register_PhoneNumberOptional(t *testing.T) {
 	assert.NotNil(t, user)
 	assert.Equal(t, "", user.PhoneNumber, "expected phone number to be empty")
 }
+
+func TestUserService_GetProfile_Success(t *testing.T) {
+	repo := NewMockUserRepository()
+	svc := applications.NewUserService(repo, []byte("test-secret"), "HS256", 60*time.Minute, logger.DefaultNewLogger())
+
+	expectedUser := &models.User{
+		ID:          "user-1",
+		Username:    "testuser",
+		Email:       "test@example.com",
+		PhoneNumber: "+1234567890",
+		Role:        models.RoleRegisteredUser,
+		IsVip:       false,
+		IsActive:    true,
+	}
+	repo.users[expectedUser.ID] = expectedUser
+
+	ctx := context.Background()
+	user, err := svc.GetProfile(ctx, expectedUser.ID)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, user)
+	assert.Equal(t, expectedUser.ID, user.ID)
+	assert.Equal(t, expectedUser.Username, user.Username)
+	assert.Equal(t, expectedUser.Email, user.Email)
+}
+
+func TestUserService_GetProfile_NotFound(t *testing.T) {
+	repo := NewMockUserRepository()
+	svc := applications.NewUserService(repo, []byte("test-secret"), "HS256", 60*time.Minute, logger.DefaultNewLogger())
+
+	ctx := context.Background()
+	user, err := svc.GetProfile(ctx, "non-existing-user")
+
+	assert.Error(t, err)
+	assert.Nil(t, user)
+
+	st, ok := status.FromError(err)
+	assert.True(t, ok, "expected gRPC status error")
+	assert.Equal(t, codes.NotFound, st.Code(), "expected NotFound error code")
+}

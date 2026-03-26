@@ -25,7 +25,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: book_db
     ports:
-      - "5433:5432"
+      - "15433:5432"
     volumes:
       - "postgres_book_data:/var/lib/postgresql/data"
     healthcheck:
