@@ -51,11 +51,11 @@ func (rp *ReverseProxy) Handle() gin.HandlerFunc {
 			req.URL.Host = target.Host
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, "/api/v1")
 
-			if userID, exists := c.Get("user_id"); exists {
+			if userID, exists := c.Get("X-User-ID"); exists {
 				req.Header.Set("X-User-ID", userID.(string))
 			}
 
-			if role, exists := c.Get("role"); exists {
+			if role, exists := c.Get("X-User-Role"); exists {
 				req.Header.Set("X-User-Role", role.(string))
 			}
 

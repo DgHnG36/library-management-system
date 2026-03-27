@@ -32,7 +32,7 @@ func (r *orderRepo) Create(ctx context.Context, order *models.Order) error {
 
 func (r *orderRepo) FindByID(ctx context.Context, orderID string) (*models.Order, error) {
 	var order models.Order
-	err := r.db.WithContext(ctx).Preload("Books").First(&order, "id = ?", order.ID).Error
+	err := r.db.WithContext(ctx).Preload("Books").First(&order, "id = ?", orderID).Error
 	if err != nil {
 		return nil, nil
 	}
@@ -46,7 +46,7 @@ func (r *orderRepo) FindByUserID(ctx context.Context, userID string, page, limit
 	var countErr, queryErr error
 
 	query := r.db.WithContext(ctx).Model(&models.Order{}).Where("user_id = ?", userID)
-	if filterStatus != "" {
+	if filterStatus != "" && filterStatus != "STATUS_UNSPECIFIED" {
 		query = query.Where("status = ?", filterStatus)
 	}
 

@@ -1,6 +1,7 @@
 .PHONY: help proto-all proto-go proto-python proto-clean \
 	test-all test-unit test-integration test-e2e test-performance test-performance-load test-performance-stress \
-	docker-run-test docker-build-test docker-down-test docker-run docker-build docker-down \ 
+	docker-run-test docker-build-test docker-down-test \
+	docker-run docker-build docker-down
 
 help:
 	@echo "Usage: make [target]"
@@ -24,34 +25,38 @@ help:
 	@echo "  docker-build             Build Docker images for the application"
 	@echo "  docker-down              Stop and remove Docker containers for the application"
 
-.proto-all: proto-go proto-python
+# MAKE PROTOBUF
+.proto-all:
+	$(MAKE) -C proto/ all
 .proto-go:
-	protoc --go_out=. --go-grpc_out=. proto/*.proto
+	$(MAKE) -C proto/ go
 .proto-python:
-	protoc --python_out=. proto/*.proto
+	$(MAKE) -C proto/ python
 .proto-clean:
-	rm -rf shared/*
+	$(MAKE) -C proto/ clean
 .test-all: test-unit test-integration test-e2e test-performance
+
+# MAKE TEST
 .test-unit:
-	go test -v ./... -tags=unit
+	$(MAKE) -C test/unit unit
 .test-integration:
-	go test -v ./... -tags=integration
+	$(MAKE) -C test/integration integration
 .test-e2e:
-	go test -v ./... -tags=e2e
+	$(MAKE) -C test/e2e e2e
 .test-performance: test-performance-load test-performance-stress
 .test-performance-load:
-	go test -v ./... -tags=performance_load
+	$(MAKE) -C test/performance load
 .test-performance-stress:
-	go test -v ./... -tags=performance_stress
-.docker-run-test:
-	docker-compose -f docker-compose.local.yaml up --build --abort-on-container-exit -d
-.docker-build-test:
-	docker-compose -f docker-compose.local.yaml build
-.docker-down-test:
-	docker-compose -f docker-compose.local.yaml down
-.docker-run:
-	docker-compose -f docker-compose.prod.yaml up --build -d
-.docker-build:
-	docker-compose -f docker-compose.prod.yaml build
-.docker-down:
-	docker-compose -f docker-compose.prod.yaml down
+	$(MAKE) -C test/performance stress
+# .docker-run-test:
+# 	docker-compose -f docker-compose.local.yaml up --build --abort-on-container-exit -d
+# .docker-build-test:
+# 	docker-compose -f docker-compose.local.yaml build
+# .docker-down-test:
+# 	docker-compose -f docker-compose.local.yaml down
+# .docker-run:
+# 	docker-compose -f docker-compose.prod.yaml up --build -d
+# .docker-build:
+# 	docker-compose -f docker-compose.prod.yaml build
+# .docker-down:
+# 	docker-compose -f docker-compose.prod.yaml down
