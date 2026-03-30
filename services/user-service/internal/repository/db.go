@@ -56,5 +56,12 @@ func NewPostgresDB(config *DBConfig) (*gorm.DB, error) {
 }
 
 func MigrateDB(db *gorm.DB) error {
-	return db.AutoMigrate(&models.User{})
+	err := db.AutoMigrate(
+		&models.User{},
+		&models.UserToken{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to migrate database: %w", err)
+	}
+	return nil
 }

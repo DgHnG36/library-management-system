@@ -7,26 +7,16 @@ import (
 	"github.com/DgHnG36/lib-management-system/services/user-service/internal/models"
 	"github.com/DgHnG36/lib-management-system/services/user-service/internal/repository"
 	"github.com/DgHnG36/lib-management-system/services/user-service/pkg/logger"
-	"github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type JWTClaims struct {
-	UserID string `json:"user_id"`
-	Role   string `json:"role"`
-	Email  string `json:"email"`
-	jwt.StandardClaims
-}
-
 type UserService struct {
-	userRepo     repository.UserRepository
-	jwtSecret    []byte
-	jwtAlgorithm string
-	jwtExpMins   time.Duration
-	logger       *logger.Logger
+	userRepo   repository.UserRepository
+	jwtService *JWTService
+	logger     *logger.Logger
 }
 
 func NewUserService(
@@ -37,11 +27,9 @@ func NewUserService(
 	logger *logger.Logger,
 ) *UserService {
 	return &UserService{
-		userRepo:     userRepo,
-		jwtSecret:    jwtSecret,
-		jwtAlgorithm: jwtAlgorithm,
-		jwtExpMins:   jwtExpMins,
-		logger:       logger,
+		userRepo:   userRepo,
+		jwtService: NewJWTService(jwtSecret, jwtAlgorithm, jwtExpMins),
+		logger:     logger,
 	}
 }
 
@@ -96,7 +84,7 @@ func (s *UserService) Register(ctx context.Context, username, password, email, p
 	return newUser, nil
 }
 
-func (s *UserService) Login(ctx context.Context, identifier, password string, byEmail bool) (*models.User, string, error) {
+func (s *UserService) Login(ctx context.Context, identifier, password string, byEmail bool) (*models.User, *TokenPair, error) {
 	s.logger.Info("User login attempt", logger.Fields{
 		"identifier": identifier,
 		"by_email":   byEmail,
@@ -111,28 +99,33 @@ func (s *UserService) Login(ctx context.Context, identifier, password string, by
 	}
 
 	if err != nil {
-		return nil, "", status.Errorf(codes.Internal, "failed to find user: %v", err)
+		return nil, nil, status.Errorf(codes.Internal, "failed to find user: %v", err)
 	}
 	if loginUser == nil {
-		return nil, "", status.Errorf(codes.NotFound, "invalid credentials")
+		return nil, nil, status.Errorf(codes.NotFound, "invalid credentials")
 	}
 	if !loginUser.IsActive {
-		return nil, "", status.Errorf(codes.PermissionDenied, "account is inactive")
+		return nil, nil, status.Errorf(codes.PermissionDenied, "account is inactive")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(loginUser.Password), []byte(password)); err != nil {
-		return nil, "", status.Errorf(codes.Unauthenticated, "invalid credentials")
+		return nil, nil, status.Errorf(codes.Unauthenticated, "invalid credentials")
 	}
 
-	token, err := s.generateToken(loginUser)
+	tokenPair, tokenHashed, expiresAt, err := s.jwtService.GenerateTokenPair(loginUser)
 	if err != nil {
-		return nil, "", status.Errorf(codes.Internal, "failed to generate token: %v", err)
+		return nil, nil, status.Errorf(codes.Internal, "failed to generate token: %v", err)
+	}
+
+	err = s.userRepo.StoreRefreshToken(ctx, loginUser.ID, tokenHashed, expiresAt)
+	if err != nil {
+		return nil, nil, status.Errorf(codes.Internal, "failed to store refresh token: %v", err)
 	}
 
 	s.logger.Info("User logged in", logger.Fields{
 		"user_id": loginUser.ID,
 	})
-	return loginUser, token, nil
+	return loginUser, tokenPair, nil
 }
 
 func (s *UserService) GetProfile(ctx context.Context, userID string) (*models.User, error) {
@@ -215,7 +208,11 @@ func (s *UserService) UpdateVIPAccount(ctx context.Context, id string, isVip boo
 	return isVip, nil
 }
 
-func (s *UserService) ListUsers(ctx context.Context, page, limit int32, sortBy string, isDesc bool, role models.UserRole) ([]*models.User, int32, error) {
+func (s *UserService) ListUsers(ctx context.Context, callerRole models.UserRole, page, limit int32, sortBy string, isDesc bool, targetRole models.UserRole) ([]*models.User, int32, error) {
+	if callerRole == models.RoleGuest || callerRole == models.RoleRegisteredUser {
+		return nil, 0, status.Errorf(codes.PermissionDenied, "insufficient permissions to list users")
+	}
+
 	if page <= 0 {
 		page = 1
 	}
@@ -223,50 +220,64 @@ func (s *UserService) ListUsers(ctx context.Context, page, limit int32, sortBy s
 		limit = 10
 	}
 
-	users, total, err := s.userRepo.List(ctx, page, limit, sortBy, isDesc, role)
+	users, total, err := s.userRepo.List(ctx, page, limit, sortBy, isDesc, targetRole)
 	if err != nil {
 		return nil, 0, status.Errorf(codes.Internal, "failed to list users: %v", err)
 	}
 	return users, total, nil
 }
 
-func (s *UserService) DeleteUsers(ctx context.Context, ids []string) error {
+func (s *UserService) DeleteUsers(ctx context.Context, callerRole models.UserRole, ids []string) error {
+	if callerRole != models.RoleAdmin {
+		return status.Errorf(codes.PermissionDenied, "insufficient permissions to delete users")
+	}
+
 	s.logger.Info("Deleting users", logger.Fields{"ids": ids})
 
 	if err := s.userRepo.Delete(ctx, ids); err != nil {
 		return status.Errorf(codes.Internal, "failed to delete users: %v", err)
 	}
+
 	return nil
 }
 
-/* HELPER METHODS */
-func (s *UserService) generateToken(user *models.User) (string, error) {
-	expMins := int(s.jwtExpMins.Minutes())
-	if expMins <= 0 {
-		expMins = 60
+func (s *UserService) RefreshToken(ctx context.Context, userID, refreshToken string) (*TokenPair, error) {
+	s.logger.Info("Refreshing token", logger.Fields{
+		"user_id": userID,
+	})
+
+	tokenHashed := s.jwtService.HashRefreshToken(refreshToken)
+	userToken, err := s.userRepo.FindRefreshToken(ctx, tokenHashed)
+
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to find user: %v", err)
+	}
+	if userToken == nil || userToken.UserID != userID {
+		return nil, status.Errorf(codes.NotFound, "user %s not found", userID)
 	}
 
-	claims := JWTClaims{
-		UserID: user.ID,
-		Role:   string(user.Role),
-		Email:  user.Email,
-		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: time.Now().Add(time.Duration(expMins) * time.Minute).Unix(),
-			IssuedAt:  time.Now().Unix(),
-			Issuer:    "lib-management-system",
-			Subject:   user.ID,
-			Audience:  "gateway-service",
-		},
+	if time.Now().After(userToken.ExpiresAt) {
+		s.userRepo.DeleteRefreshToken(ctx, tokenHashed)
+		return nil, status.Errorf(codes.Unauthenticated, "refresh token expired")
 	}
 
-	var signingMethod jwt.SigningMethod
-	switch s.jwtAlgorithm {
-	case "HS512":
-		signingMethod = jwt.SigningMethodHS512
-	default:
-		signingMethod = jwt.SigningMethodHS256
+	user, err := s.userRepo.FindByID(ctx, userToken.UserID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to find user: %v", err)
+	}
+	if user == nil {
+		return nil, status.Errorf(codes.NotFound, "user %s not found", userToken.UserID)
 	}
 
-	token := jwt.NewWithClaims(signingMethod, claims)
-	return token.SignedString(s.jwtSecret)
+	tokenPair, tokenHashed, expiresAt, err := s.jwtService.GenerateTokenPair(user)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to refresh token: %v", err)
+	}
+
+	err = s.userRepo.StoreRefreshToken(ctx, userID, tokenHashed, expiresAt)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to store refresh token: %v", err)
+	}
+
+	return tokenPair, nil
 }

@@ -405,8 +405,9 @@ type LoginResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Status        int32                  `protobuf:"varint,1,opt,name=status,proto3" json:"status,omitempty"`
 	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	Token         string                 `protobuf:"bytes,3,opt,name=token,proto3" json:"token,omitempty"`
-	User          *User                  `protobuf:"bytes,4,opt,name=user,proto3" json:"user,omitempty"`
+	AccessToken   string                 `protobuf:"bytes,3,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
+	RefreshToken  string                 `protobuf:"bytes,4,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	User          *User                  `protobuf:"bytes,5,opt,name=user,proto3" json:"user,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -455,9 +456,16 @@ func (x *LoginResponse) GetMessage() string {
 	return ""
 }
 
-func (x *LoginResponse) GetToken() string {
+func (x *LoginResponse) GetAccessToken() string {
 	if x != nil {
-		return x.Token
+		return x.AccessToken
+	}
+	return ""
+}
+
+func (x *LoginResponse) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
 	}
 	return ""
 }
@@ -885,6 +893,50 @@ func (x *DeleteUsersRequest) GetIds() []string {
 	return nil
 }
 
+type RefreshTokenRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RefreshToken  string                 `protobuf:"bytes,1,opt,name=refreshToken,proto3" json:"refreshToken,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshTokenRequest) Reset() {
+	*x = RefreshTokenRequest{}
+	mi := &file_user_user_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshTokenRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshTokenRequest) ProtoMessage() {}
+
+func (x *RefreshTokenRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_user_user_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshTokenRequest.ProtoReflect.Descriptor instead.
+func (*RefreshTokenRequest) Descriptor() ([]byte, []int) {
+	return file_user_user_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *RefreshTokenRequest) GetRefreshToken() string {
+	if x != nil {
+		return x.RefreshToken
+	}
+	return ""
+}
+
 var File_user_user_proto protoreflect.FileDescriptor
 
 const file_user_user_proto_rawDesc = "" +
@@ -915,12 +967,13 @@ const file_user_user_proto_rawDesc = "" +
 	"\x05email\x18\x02 \x01(\tH\x00R\x05email\x12\x1a\n" +
 	"\bpassword\x18\x03 \x01(\tR\bpasswordB\f\n" +
 	"\n" +
-	"identifier\"z\n" +
+	"identifier\"\xac\x01\n" +
 	"\rLoginResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\x05R\x06status\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\x12\x14\n" +
-	"\x05token\x18\x03 \x01(\tR\x05token\x12!\n" +
-	"\x04user\x18\x04 \x01(\v2\r.user.v1.UserR\x04user\"8\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12!\n" +
+	"\faccess_token\x18\x03 \x01(\tR\vaccessToken\x12#\n" +
+	"\rrefresh_token\x18\x04 \x01(\tR\frefreshToken\x12!\n" +
+	"\x04user\x18\x05 \x01(\v2\r.user.v1.UserR\x04user\"8\n" +
 	"\x13UserProfileResponse\x12!\n" +
 	"\x04user\x18\x01 \x01(\v2\r.user.v1.UserR\x04user\"#\n" +
 	"\x11GetProfileRequest\x12\x0e\n" +
@@ -947,12 +1000,14 @@ const file_user_user_proto_rawDesc = "" +
 	"\vtotal_count\x18\x02 \x01(\x05R\n" +
 	"totalCount\"&\n" +
 	"\x12DeleteUsersRequest\x12\x10\n" +
-	"\x03ids\x18\x01 \x03(\tR\x03ids*B\n" +
+	"\x03ids\x18\x01 \x03(\tR\x03ids\"9\n" +
+	"\x13RefreshTokenRequest\x12\"\n" +
+	"\frefreshToken\x18\x01 \x01(\tR\frefreshToken*B\n" +
 	"\bUserRole\x12\t\n" +
 	"\x05GUEST\x10\x00\x12\x13\n" +
 	"\x0fREGISTERED_USER\x10\x01\x12\v\n" +
 	"\aMANAGER\x10\x02\x12\t\n" +
-	"\x05ADMIN\x10\x032\xfe\x03\n" +
+	"\x05ADMIN\x10\x032\xc4\x04\n" +
 	"\vUserService\x12?\n" +
 	"\bRegister\x12\x18.user.v1.RegisterRequest\x1a\x19.user.v1.RegisterResponse\x126\n" +
 	"\x05Login\x12\x15.user.v1.LoginRequest\x1a\x16.user.v1.LoginResponse\x12F\n" +
@@ -961,7 +1016,8 @@ const file_user_user_proto_rawDesc = "" +
 	"\rUpdateProfile\x12\x1d.user.v1.UpdateProfileRequest\x1a\x1c.user.v1.UserProfileResponse\x12W\n" +
 	"\x10UpdateVIPAccount\x12 .user.v1.UpdateVIPAccountRequest\x1a!.user.v1.UpdateVIPAccountResponse\x12B\n" +
 	"\tListUsers\x12\x19.user.v1.ListUsersRequest\x1a\x1a.user.v1.ListUsersResponse\x12C\n" +
-	"\vDeleteUsers\x12\x1b.user.v1.DeleteUsersRequest\x1a\x17.common.v1.BaseResponseBCZAgithub.com/DgHnG36/lib-management-system/shared/go/v1/user;userv1b\x06proto3"
+	"\vDeleteUsers\x12\x1b.user.v1.DeleteUsersRequest\x1a\x17.common.v1.BaseResponse\x12D\n" +
+	"\fRefreshToken\x12\x1c.user.v1.RefreshTokenRequest\x1a\x16.user.v1.LoginResponseBCZAgithub.com/DgHnG36/lib-management-system/shared/go/v1/user;userv1b\x06proto3"
 
 var (
 	file_user_user_proto_rawDescOnce sync.Once
@@ -976,7 +1032,7 @@ func file_user_user_proto_rawDescGZIP() []byte {
 }
 
 var file_user_user_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_user_user_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_user_user_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_user_user_proto_goTypes = []any{
 	(UserRole)(0),                    // 0: user.v1.UserRole
 	(*User)(nil),                     // 1: user.v1.User
@@ -992,17 +1048,18 @@ var file_user_user_proto_goTypes = []any{
 	(*ListUsersRequest)(nil),         // 11: user.v1.ListUsersRequest
 	(*ListUsersResponse)(nil),        // 12: user.v1.ListUsersResponse
 	(*DeleteUsersRequest)(nil),       // 13: user.v1.DeleteUsersRequest
-	(*timestamppb.Timestamp)(nil),    // 14: google.protobuf.Timestamp
-	(*v1.PaginationRequest)(nil),     // 15: common.v1.PaginationRequest
-	(*v1.BaseResponse)(nil),          // 16: common.v1.BaseResponse
+	(*RefreshTokenRequest)(nil),      // 14: user.v1.RefreshTokenRequest
+	(*timestamppb.Timestamp)(nil),    // 15: google.protobuf.Timestamp
+	(*v1.PaginationRequest)(nil),     // 16: common.v1.PaginationRequest
+	(*v1.BaseResponse)(nil),          // 17: common.v1.BaseResponse
 }
 var file_user_user_proto_depIdxs = []int32{
 	0,  // 0: user.v1.User.role:type_name -> user.v1.UserRole
-	14, // 1: user.v1.User.created_at:type_name -> google.protobuf.Timestamp
-	14, // 2: user.v1.User.last_updated:type_name -> google.protobuf.Timestamp
+	15, // 1: user.v1.User.created_at:type_name -> google.protobuf.Timestamp
+	15, // 2: user.v1.User.last_updated:type_name -> google.protobuf.Timestamp
 	1,  // 3: user.v1.LoginResponse.user:type_name -> user.v1.User
 	1,  // 4: user.v1.UserProfileResponse.user:type_name -> user.v1.User
-	15, // 5: user.v1.ListUsersRequest.pagination:type_name -> common.v1.PaginationRequest
+	16, // 5: user.v1.ListUsersRequest.pagination:type_name -> common.v1.PaginationRequest
 	0,  // 6: user.v1.ListUsersRequest.role:type_name -> user.v1.UserRole
 	1,  // 7: user.v1.ListUsersResponse.users:type_name -> user.v1.User
 	2,  // 8: user.v1.UserService.Register:input_type -> user.v1.RegisterRequest
@@ -1012,15 +1069,17 @@ var file_user_user_proto_depIdxs = []int32{
 	9,  // 12: user.v1.UserService.UpdateVIPAccount:input_type -> user.v1.UpdateVIPAccountRequest
 	11, // 13: user.v1.UserService.ListUsers:input_type -> user.v1.ListUsersRequest
 	13, // 14: user.v1.UserService.DeleteUsers:input_type -> user.v1.DeleteUsersRequest
-	3,  // 15: user.v1.UserService.Register:output_type -> user.v1.RegisterResponse
-	5,  // 16: user.v1.UserService.Login:output_type -> user.v1.LoginResponse
-	6,  // 17: user.v1.UserService.GetProfile:output_type -> user.v1.UserProfileResponse
-	6,  // 18: user.v1.UserService.UpdateProfile:output_type -> user.v1.UserProfileResponse
-	10, // 19: user.v1.UserService.UpdateVIPAccount:output_type -> user.v1.UpdateVIPAccountResponse
-	12, // 20: user.v1.UserService.ListUsers:output_type -> user.v1.ListUsersResponse
-	16, // 21: user.v1.UserService.DeleteUsers:output_type -> common.v1.BaseResponse
-	15, // [15:22] is the sub-list for method output_type
-	8,  // [8:15] is the sub-list for method input_type
+	14, // 15: user.v1.UserService.RefreshToken:input_type -> user.v1.RefreshTokenRequest
+	3,  // 16: user.v1.UserService.Register:output_type -> user.v1.RegisterResponse
+	5,  // 17: user.v1.UserService.Login:output_type -> user.v1.LoginResponse
+	6,  // 18: user.v1.UserService.GetProfile:output_type -> user.v1.UserProfileResponse
+	6,  // 19: user.v1.UserService.UpdateProfile:output_type -> user.v1.UserProfileResponse
+	10, // 20: user.v1.UserService.UpdateVIPAccount:output_type -> user.v1.UpdateVIPAccountResponse
+	12, // 21: user.v1.UserService.ListUsers:output_type -> user.v1.ListUsersResponse
+	17, // 22: user.v1.UserService.DeleteUsers:output_type -> common.v1.BaseResponse
+	5,  // 23: user.v1.UserService.RefreshToken:output_type -> user.v1.LoginResponse
+	16, // [16:24] is the sub-list for method output_type
+	8,  // [8:16] is the sub-list for method input_type
 	8,  // [8:8] is the sub-list for extension type_name
 	8,  // [8:8] is the sub-list for extension extendee
 	0,  // [0:8] is the sub-list for field type_name
@@ -1041,7 +1100,7 @@ func file_user_user_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_user_user_proto_rawDesc), len(file_user_user_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   13,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -11,7 +11,7 @@ type SvcConfig struct {
 	Environment string
 	SvcName     string
 	Version     string
-	Port        int
+	Port        string
 
 	JWTSecret    []byte
 	JWTAlgorithm string
@@ -36,7 +36,7 @@ func LoadFromEnv() *SvcConfig {
 		Environment:      getEnvOrDefault("APP_ENV", "development"),
 		SvcName:          getEnvOrDefault("SVC_NAME", "gateway-service"),
 		Version:          getEnvOrDefault("VERSION", "1.0.0"),
-		Port:             getEnvAsInt("PORT", 8080),
+		Port:             getEnvOrDefault("PORT", "8080"),
 		JWTSecret:        []byte(getEnvOrDefault("JWT_SECRET", "gateway-secret-key")),
 		JWTAlgorithm:     getEnvOrDefault("JWT_ALGORITHM", "HS256"),
 		JWTExpMins:       getEnvAsDuration("JWT_EXP_MINS", 60),

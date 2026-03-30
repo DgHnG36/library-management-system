@@ -37,14 +37,15 @@ func NewRateLimitMiddleware(redisClient *redis.Client, maxRequests, windowSecond
 
 func (m *RateLimitMiddleware) Handle() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		role, exists := c.Get("role")
-		if exists && role == "admin" {
+		identifier := c.ClientIP()
+		userRole := c.GetHeader("X-User-Role")
+
+		if userRole == "admin" {
 			c.Next()
 			return
 		}
 
-		clientIP := c.ClientIP()
-		key := fmt.Sprintf("ratelimit:%s", clientIP)
+		key := fmt.Sprintf("ratelimit:%s:%s", userRole, identifier)
 		ctx := c.Request.Context()
 
 		result, err := m.redisClient.Eval(ctx, luaScript, []string{key}, m.windowSeconds).Result()
@@ -74,7 +75,8 @@ func (m *RateLimitMiddleware) Handle() gin.HandlerFunc {
 			})
 
 			m.logger.Warn("Rate limit exceeded", logger.Fields{
-				"ip":   clientIP,
+				"ip":   identifier,
+				"role": userRole,
 				"code": appErr.Code,
 			})
 

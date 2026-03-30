@@ -26,7 +26,7 @@ from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__
 import common_pb2 as common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0fuser/user.proto\x12\x07user.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x0c\x63ommon.proto\"\xef\x01\n\x04User\x12\n\n\x02id\x18\x01 \x01(\t\x12\x10\n\x08username\x18\x02 \x01(\t\x12\r\n\x05\x65mail\x18\x03 \x01(\t\x12\x14\n\x0cphone_number\x18\x04 \x01(\t\x12\x1f\n\x04role\x18\x05 \x01(\x0e\x32\x11.user.v1.UserRole\x12\x0e\n\x06is_vip\x18\x06 \x01(\x08\x12.\n\ncreated_at\x18\x07 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x30\n\x0clast_updated\x18\x08 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x11\n\tis_active\x18\t \x01(\x08\"Z\n\x0fRegisterRequest\x12\x10\n\x08username\x18\x01 \x01(\t\x12\x10\n\x08password\x18\x02 \x01(\t\x12\r\n\x05\x65mail\x18\x03 \x01(\t\x12\x14\n\x0cphone_number\x18\x04 \x01(\t\"D\n\x10RegisterResponse\x12\x0e\n\x06status\x18\x01 \x01(\x05\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x0f\n\x07user_id\x18\x03 \x01(\t\"S\n\x0cLoginRequest\x12\x12\n\x08username\x18\x01 \x01(\tH\x00\x12\x0f\n\x05\x65mail\x18\x02 \x01(\tH\x00\x12\x10\n\x08password\x18\x03 \x01(\tB\x0c\n\nidentifier\"\\\n\rLoginResponse\x12\x0e\n\x06status\x18\x01 \x01(\x05\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\r\n\x05token\x18\x03 \x01(\t\x12\x1b\n\x04user\x18\x04 \x01(\x0b\x32\r.user.v1.User\"2\n\x13UserProfileResponse\x12\x1b\n\x04user\x18\x01 \x01(\x0b\x32\r.user.v1.User\"\x1f\n\x11GetProfileRequest\x12\n\n\x02id\x18\x01 \x01(\t\"Y\n\x14UpdateProfileRequest\x12\n\n\x02id\x18\x01 \x01(\t\x12\x10\n\x08username\x18\x02 \x01(\t\x12\r\n\x05\x65mail\x18\x03 \x01(\t\x12\x14\n\x0cphone_number\x18\x04 \x01(\t\"5\n\x17UpdateVIPAccountRequest\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0e\n\x06is_vip\x18\x02 \x01(\x08\"W\n\x18UpdateVIPAccountResponse\x12\x0e\n\x06status\x18\x01 \x01(\x05\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x1a\n\x12\x63urrent_vip_status\x18\x03 \x01(\x08\"e\n\x10ListUsersRequest\x12\x30\n\npagination\x18\x01 \x01(\x0b\x32\x1c.common.v1.PaginationRequest\x12\x1f\n\x04role\x18\x02 \x01(\x0e\x32\x11.user.v1.UserRole\"F\n\x11ListUsersResponse\x12\x1c\n\x05users\x18\x01 \x03(\x0b\x32\r.user.v1.User\x12\x13\n\x0btotal_count\x18\x02 \x01(\x05\"!\n\x12\x44\x65leteUsersRequest\x12\x0b\n\x03ids\x18\x01 \x03(\t*B\n\x08UserRole\x12\t\n\x05GUEST\x10\x00\x12\x13\n\x0fREGISTERED_USER\x10\x01\x12\x0b\n\x07MANAGER\x10\x02\x12\t\n\x05\x41\x44MIN\x10\x03\x32\xfe\x03\n\x0bUserService\x12?\n\x08Register\x12\x18.user.v1.RegisterRequest\x1a\x19.user.v1.RegisterResponse\x12\x36\n\x05Login\x12\x15.user.v1.LoginRequest\x1a\x16.user.v1.LoginResponse\x12\x46\n\nGetProfile\x12\x1a.user.v1.GetProfileRequest\x1a\x1c.user.v1.UserProfileResponse\x12L\n\rUpdateProfile\x12\x1d.user.v1.UpdateProfileRequest\x1a\x1c.user.v1.UserProfileResponse\x12W\n\x10UpdateVIPAccount\x12 .user.v1.UpdateVIPAccountRequest\x1a!.user.v1.UpdateVIPAccountResponse\x12\x42\n\tListUsers\x12\x19.user.v1.ListUsersRequest\x1a\x1a.user.v1.ListUsersResponse\x12\x43\n\x0b\x44\x65leteUsers\x12\x1b.user.v1.DeleteUsersRequest\x1a\x17.common.v1.BaseResponseBCZAgithub.com/DgHnG36/lib-management-system/shared/go/v1/user;userv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0fuser/user.proto\x12\x07user.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x0c\x63ommon.proto\"\xef\x01\n\x04User\x12\n\n\x02id\x18\x01 \x01(\t\x12\x10\n\x08username\x18\x02 \x01(\t\x12\r\n\x05\x65mail\x18\x03 \x01(\t\x12\x14\n\x0cphone_number\x18\x04 \x01(\t\x12\x1f\n\x04role\x18\x05 \x01(\x0e\x32\x11.user.v1.UserRole\x12\x0e\n\x06is_vip\x18\x06 \x01(\x08\x12.\n\ncreated_at\x18\x07 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x30\n\x0clast_updated\x18\x08 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x11\n\tis_active\x18\t \x01(\x08\"Z\n\x0fRegisterRequest\x12\x10\n\x08username\x18\x01 \x01(\t\x12\x10\n\x08password\x18\x02 \x01(\t\x12\r\n\x05\x65mail\x18\x03 \x01(\t\x12\x14\n\x0cphone_number\x18\x04 \x01(\t\"D\n\x10RegisterResponse\x12\x0e\n\x06status\x18\x01 \x01(\x05\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x0f\n\x07user_id\x18\x03 \x01(\t\"S\n\x0cLoginRequest\x12\x12\n\x08username\x18\x01 \x01(\tH\x00\x12\x0f\n\x05\x65mail\x18\x02 \x01(\tH\x00\x12\x10\n\x08password\x18\x03 \x01(\tB\x0c\n\nidentifier\"z\n\rLoginResponse\x12\x0e\n\x06status\x18\x01 \x01(\x05\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x03 \x01(\t\x12\x15\n\rrefresh_token\x18\x04 \x01(\t\x12\x1b\n\x04user\x18\x05 \x01(\x0b\x32\r.user.v1.User\"2\n\x13UserProfileResponse\x12\x1b\n\x04user\x18\x01 \x01(\x0b\x32\r.user.v1.User\"\x1f\n\x11GetProfileRequest\x12\n\n\x02id\x18\x01 \x01(\t\"Y\n\x14UpdateProfileRequest\x12\n\n\x02id\x18\x01 \x01(\t\x12\x10\n\x08username\x18\x02 \x01(\t\x12\r\n\x05\x65mail\x18\x03 \x01(\t\x12\x14\n\x0cphone_number\x18\x04 \x01(\t\"5\n\x17UpdateVIPAccountRequest\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0e\n\x06is_vip\x18\x02 \x01(\x08\"W\n\x18UpdateVIPAccountResponse\x12\x0e\n\x06status\x18\x01 \x01(\x05\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x1a\n\x12\x63urrent_vip_status\x18\x03 \x01(\x08\"e\n\x10ListUsersRequest\x12\x30\n\npagination\x18\x01 \x01(\x0b\x32\x1c.common.v1.PaginationRequest\x12\x1f\n\x04role\x18\x02 \x01(\x0e\x32\x11.user.v1.UserRole\"F\n\x11ListUsersResponse\x12\x1c\n\x05users\x18\x01 \x03(\x0b\x32\r.user.v1.User\x12\x13\n\x0btotal_count\x18\x02 \x01(\x05\"!\n\x12\x44\x65leteUsersRequest\x12\x0b\n\x03ids\x18\x01 \x03(\t\"+\n\x13RefreshTokenRequest\x12\x14\n\x0crefreshToken\x18\x01 \x01(\t*B\n\x08UserRole\x12\t\n\x05GUEST\x10\x00\x12\x13\n\x0fREGISTERED_USER\x10\x01\x12\x0b\n\x07MANAGER\x10\x02\x12\t\n\x05\x41\x44MIN\x10\x03\x32\xc4\x04\n\x0bUserService\x12?\n\x08Register\x12\x18.user.v1.RegisterRequest\x1a\x19.user.v1.RegisterResponse\x12\x36\n\x05Login\x12\x15.user.v1.LoginRequest\x1a\x16.user.v1.LoginResponse\x12\x46\n\nGetProfile\x12\x1a.user.v1.GetProfileRequest\x1a\x1c.user.v1.UserProfileResponse\x12L\n\rUpdateProfile\x12\x1d.user.v1.UpdateProfileRequest\x1a\x1c.user.v1.UserProfileResponse\x12W\n\x10UpdateVIPAccount\x12 .user.v1.UpdateVIPAccountRequest\x1a!.user.v1.UpdateVIPAccountResponse\x12\x42\n\tListUsers\x12\x19.user.v1.ListUsersRequest\x1a\x1a.user.v1.ListUsersResponse\x12\x43\n\x0b\x44\x65leteUsers\x12\x1b.user.v1.DeleteUsersRequest\x1a\x17.common.v1.BaseResponse\x12\x44\n\x0cRefreshToken\x12\x1c.user.v1.RefreshTokenRequest\x1a\x16.user.v1.LoginResponseBCZAgithub.com/DgHnG36/lib-management-system/shared/go/v1/user;userv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -34,8 +34,8 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'user.user_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'ZAgithub.com/DgHnG36/lib-management-system/shared/go/v1/user;userv1'
-  _globals['_USERROLE']._serialized_start=1188
-  _globals['_USERROLE']._serialized_end=1254
+  _globals['_USERROLE']._serialized_start=1263
+  _globals['_USERROLE']._serialized_end=1329
   _globals['_USER']._serialized_start=76
   _globals['_USER']._serialized_end=315
   _globals['_REGISTERREQUEST']._serialized_start=317
@@ -45,23 +45,25 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_LOGINREQUEST']._serialized_start=479
   _globals['_LOGINREQUEST']._serialized_end=562
   _globals['_LOGINRESPONSE']._serialized_start=564
-  _globals['_LOGINRESPONSE']._serialized_end=656
-  _globals['_USERPROFILERESPONSE']._serialized_start=658
-  _globals['_USERPROFILERESPONSE']._serialized_end=708
-  _globals['_GETPROFILEREQUEST']._serialized_start=710
-  _globals['_GETPROFILEREQUEST']._serialized_end=741
-  _globals['_UPDATEPROFILEREQUEST']._serialized_start=743
-  _globals['_UPDATEPROFILEREQUEST']._serialized_end=832
-  _globals['_UPDATEVIPACCOUNTREQUEST']._serialized_start=834
-  _globals['_UPDATEVIPACCOUNTREQUEST']._serialized_end=887
-  _globals['_UPDATEVIPACCOUNTRESPONSE']._serialized_start=889
-  _globals['_UPDATEVIPACCOUNTRESPONSE']._serialized_end=976
-  _globals['_LISTUSERSREQUEST']._serialized_start=978
-  _globals['_LISTUSERSREQUEST']._serialized_end=1079
-  _globals['_LISTUSERSRESPONSE']._serialized_start=1081
-  _globals['_LISTUSERSRESPONSE']._serialized_end=1151
-  _globals['_DELETEUSERSREQUEST']._serialized_start=1153
-  _globals['_DELETEUSERSREQUEST']._serialized_end=1186
-  _globals['_USERSERVICE']._serialized_start=1257
-  _globals['_USERSERVICE']._serialized_end=1767
+  _globals['_LOGINRESPONSE']._serialized_end=686
+  _globals['_USERPROFILERESPONSE']._serialized_start=688
+  _globals['_USERPROFILERESPONSE']._serialized_end=738
+  _globals['_GETPROFILEREQUEST']._serialized_start=740
+  _globals['_GETPROFILEREQUEST']._serialized_end=771
+  _globals['_UPDATEPROFILEREQUEST']._serialized_start=773
+  _globals['_UPDATEPROFILEREQUEST']._serialized_end=862
+  _globals['_UPDATEVIPACCOUNTREQUEST']._serialized_start=864
+  _globals['_UPDATEVIPACCOUNTREQUEST']._serialized_end=917
+  _globals['_UPDATEVIPACCOUNTRESPONSE']._serialized_start=919
+  _globals['_UPDATEVIPACCOUNTRESPONSE']._serialized_end=1006
+  _globals['_LISTUSERSREQUEST']._serialized_start=1008
+  _globals['_LISTUSERSREQUEST']._serialized_end=1109
+  _globals['_LISTUSERSRESPONSE']._serialized_start=1111
+  _globals['_LISTUSERSRESPONSE']._serialized_end=1181
+  _globals['_DELETEUSERSREQUEST']._serialized_start=1183
+  _globals['_DELETEUSERSREQUEST']._serialized_end=1216
+  _globals['_REFRESHTOKENREQUEST']._serialized_start=1218
+  _globals['_REFRESHTOKENREQUEST']._serialized_end=1261
+  _globals['_USERSERVICE']._serialized_start=1332
+  _globals['_USERSERVICE']._serialized_end=1912
 # @@protoc_insertion_point(module_scope)

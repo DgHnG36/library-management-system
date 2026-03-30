@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 )
 
 func SetupRouter(
@@ -17,6 +19,7 @@ func SetupRouter(
 	corsMiddleware *middleware.CORSMiddleware,
 	rateLimitMiddleware *middleware.RateLimitMiddleware,
 	reverseProxy *proxy.ReverseProxy,
+	redisClient *redis.Client,
 	logger *logger.Logger,
 ) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
@@ -24,17 +27,17 @@ func SetupRouter(
 
 	router.Use(gin.Recovery())
 	router.Use(requestID())
-	router.Use(requestLogger(logger))
 	router.Use(corsMiddleware.Handle())
+	router.Use(requestLogger(logger))
 
 	router.GET("/healthy", healthCheck)
-	router.GET("/ready", readinessCheck)
+	router.GET("/ready", readinessCheck(redisClient, logger))
 	router.GET("/metrics", metricsCheck)
 
 	v1 := router.Group("/api/v1")
 	{
-		v1.Use(authMiddleware.Handle())
 		v1.Use(rateLimitMiddleware.Handle())
+		v1.Use(authMiddleware.Handle())
 
 		v1.Any("/*path", reverseProxy.Handle())
 
@@ -82,14 +85,28 @@ func healthCheck(c *gin.Context) {
 	})
 }
 
-func readinessCheck(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"status":    "ready",
-		"timestamp": time.Now().Format(time.RFC3339),
-	})
+func readinessCheck(redisClient *redis.Client, logger *logger.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		defer cancel()
+
+		if err := redisClient.Ping(ctx).Err(); err != nil {
+			logger.Error("Readiness check failed: Redis is down", err)
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"status":    "unhealthy",
+				"error":     err.Error(),
+				"timestamp": time.Now().Format(time.RFC3339),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"status":    "ready",
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+	}
 }
 
 func metricsCheck(c *gin.Context) {
-	handler := promhttp.Handler()
-	handler.ServeHTTP(c.Writer, c.Request)
+	gin.WrapH(promhttp.Handler())(c)
 }

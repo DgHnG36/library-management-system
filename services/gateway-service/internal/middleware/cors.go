@@ -29,12 +29,27 @@ func NewCORSMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHe
 }
 
 func NewDefaultCORSMiddleware() *CORSMiddleware {
-	allowedOrigins := []string{"http://localhost:3000", "http://localhost:5173"} // Fix later after deploy to cloud server
+	allowedOrigins := []string{"http://localhost:5173"} // Fix later after deploy to cloud server
 	allowedMethods := []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
-	allowedHeaders := []string{"Origin", "Content-Type", "Content-Length", "Authorization",
-		"Accept-Encoding", "X-CSRF-Token", "X-Requested-With", "X-Request-ID",
-		"X-User-ID", "X-User-Role", "accept", "origin"}
-	exposedHeaders := []string{"Content-Length", "Authorization", "X-Request-ID", "X-User-ID", "X-User-Role", "X-Rate-Limit-Remaining", "X-Rate-Limit-Limit"}
+	allowedHeaders := []string{
+		"Authorization",
+		"Content-Type",
+		"X-Requested-With",
+		"accept",
+		"Accept",
+		"Content-Type",
+		"origin",
+		"Origin",
+	} //  Default headers
+	exposedHeaders := []string{"Authorization",
+		"X-Refresh-Token",
+		"X-New-Access-Token",
+		"X-New-Refresh-Token",
+		"X-Request-ID",
+		"X-User-ID",
+		"X-User-Role",
+		"X-Rate-Limit-Remaining",
+		"X-Rate-Limit-Limit"}
 	allowCredentials := true
 	maxAge := 12 * time.Hour
 

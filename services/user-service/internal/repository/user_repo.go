@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/DgHnG36/lib-management-system/services/user-service/internal/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -94,6 +96,34 @@ func (r *userRepo) List(ctx context.Context, page, limit int32, sortBy string, i
 
 func (r *userRepo) Delete(ctx context.Context, ids []string) error {
 	return r.db.WithContext(ctx).Where("id IN ?", ids).Delete(&models.User{}).Error
+}
+
+func (r *userRepo) StoreRefreshToken(ctx context.Context, userID, refreshToken string, expiresAt time.Time) error {
+	token := &models.UserToken{
+		ID:               uuid.New().String(),
+		UserID:           userID,
+		RefreshTokenHash: refreshToken,
+		ExpiresAt:        expiresAt,
+		CreatedAt:        time.Now().UTC(),
+	}
+	return r.db.WithContext(ctx).Create(&token).Error
+}
+
+func (r *userRepo) FindRefreshToken(ctx context.Context, refreshTokenHashed string) (*models.UserToken, error) {
+	var token models.UserToken
+	err := r.db.WithContext(ctx).Where("refresh_token_hash = ? AND expires_at > ?", refreshTokenHashed, time.Now().UTC()).First(&token).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &token, nil
+}
+
+func (r *userRepo) DeleteRefreshToken(ctx context.Context, refreshTokenHashed string) error {
+	return r.db.WithContext(ctx).Where("refresh_token_hash = ?", refreshTokenHashed).Delete(&models.UserToken{}).Error
 }
 
 /* HELPER METHODS */

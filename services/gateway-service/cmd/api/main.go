@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -57,14 +56,14 @@ func main() {
 	reverseProxy := proxy.NewReverseProxy(cfg.TargetMap, svcLogger)
 
 	// Initialize router
-	engine := router.SetupRouter(authMiddleware, corsMiddleware, rateLimitMiddleware, reverseProxy, svcLogger)
+	engine := router.SetupRouter(authMiddleware, corsMiddleware, rateLimitMiddleware, reverseProxy, redisClient, svcLogger)
 
 	// Start server
 	svcLogger.Info("Starting gateway-service...", logger.Fields{
 		"port": cfg.Port,
 	})
 	srv := &http.Server{
-		Addr:         ":" + strconv.Itoa(cfg.Port),
+		Addr:         ":" + cfg.Port,
 		Handler:      engine,
 		ReadTimeout:  cfg.HTTPReadTimeout,
 		WriteTimeout: cfg.HTTPWriteTimeout,
@@ -72,7 +71,7 @@ func main() {
 	}
 
 	go func() {
-		svcLogger.Info(fmt.Sprintf("Gateway service started on port %s", strconv.Itoa(cfg.Port)))
+		svcLogger.Info(fmt.Sprintf("Gateway service started on port %s", cfg.Port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			svcLogger.Fatal("Failed to start server", err)
 		}
@@ -84,7 +83,7 @@ func main() {
 	| |   | |\/| \___ \ _____| |  _  / _ \ | | |  _|  \ \ /\ / / _ \\ V /
 	| |___| |  | |___) |_____| |_| |/ ___ \| | | |___  \ V  V / ___ \| |
 	|_____|_|  |_|____/       \____/_/   \_\_| |_____|  \_/\_/_/   \_\_|
-						LMS Gateway Service on port %d
+						LMS Gateway Service on port %s
 						Environment: %s
 						Version: %s
 	`, cfg.Port, cfg.Environment, cfg.Version)

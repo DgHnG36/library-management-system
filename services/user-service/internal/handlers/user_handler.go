@@ -67,17 +67,18 @@ func (h *UserHandler) Login(ctx context.Context, req *userv1.LoginRequest) (*use
 		return nil, status.Errorf(codes.InvalidArgument, "username or email is required")
 	}
 
-	user, token, err := h.userSvc.Login(ctx, identifier, req.GetPassword(), byEmail)
+	user, tokenPair, err := h.userSvc.Login(ctx, identifier, req.GetPassword(), byEmail)
 	if err != nil {
 		h.logger.Error("Failed to login", err)
 		return nil, err
 	}
 
 	return &userv1.LoginResponse{
-		Status:  200,
-		Message: "Login successful",
-		Token:   token,
-		User:    toPbUser(user),
+		Status:       200,
+		Message:      "Login successful",
+		AccessToken:  tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
+		User:         toPbUser(user),
 	}, nil
 }
 
@@ -139,8 +140,9 @@ func (h *UserHandler) ListUsers(ctx context.Context, req *userv1.ListUsersReques
 		isDesc = req.GetPagination().GetIsDesc()
 	}
 
-	role := models.UserRole(req.GetRole().String())
-	users, total, err := h.userSvc.ListUsers(ctx, page, limit, sortBy, isDesc, role)
+	callerRole := models.UserRole(ctx.Value("X-User-Role").(string))
+	targetRole := models.UserRole(req.GetRole().String())
+	users, total, err := h.userSvc.ListUsers(ctx, callerRole, page, limit, sortBy, isDesc, targetRole)
 	if err != nil {
 		h.logger.Error("Failed to list users", err)
 		return nil, err
@@ -162,7 +164,8 @@ func (h *UserHandler) DeleteUsers(ctx context.Context, req *userv1.DeleteUsersRe
 		return nil, status.Errorf(codes.InvalidArgument, "ids are required")
 	}
 
-	if err := h.userSvc.DeleteUsers(ctx, req.GetIds()); err != nil {
+	callerRole := models.UserRole(ctx.Value("X-User-Role").(string))
+	if err := h.userSvc.DeleteUsers(ctx, callerRole, req.GetIds()); err != nil {
 		h.logger.Error("Failed to delete users", err)
 		return nil, err
 	}
@@ -170,6 +173,24 @@ func (h *UserHandler) DeleteUsers(ctx context.Context, req *userv1.DeleteUsersRe
 	return &commonv1.BaseResponse{
 		Status:  200,
 		Message: "Users deleted successfully",
+	}, nil
+}
+
+func (h *UserHandler) RefreshToken(ctx context.Context, req *userv1.RefreshTokenRequest) (*userv1.LoginResponse, error) {
+	if req.GetRefreshToken() == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "refresh token is required")
+	}
+	tokenPair, err := h.userSvc.RefreshToken(ctx, ctx.Value("X-User-ID").(string), req.GetRefreshToken())
+	if err != nil {
+		h.logger.Error("Failed to refresh token", err)
+		return nil, err
+	}
+	return &userv1.LoginResponse{
+		Status:       200,
+		Message:      "Generated  refresh token successfully",
+		AccessToken:  tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
+		User:         nil,
 	}, nil
 }
 

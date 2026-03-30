@@ -22,6 +22,7 @@ service UserService {
     rpc UpdateVIPAccount(UpdateVIPAccountRequest) returns (UpdateVIPAccountResponse);
     rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
     rpc DeleteUsers(DeleteUsersRequest) returns (common.v1.BaseResponse);
+    rpc RefreshToken(RefreshTokenRequest) returns (LoginResponse);
 }
 
 message User {
@@ -60,8 +61,9 @@ message LoginRequest {
 message LoginResponse {
     int32 status = 1;
     string message = 2;
-    string token = 3;
-    User user = 4;
+    string access_token = 3;
+    string refresh_token = 4;
+    User user = 5;
 }
 
 message UserProfileResponse {
@@ -102,4 +104,8 @@ message ListUsersResponse {
 
 message DeleteUsersRequest {
     repeated string ids = 1;
+}
+
+message RefreshTokenRequest {
+    string refreshToken = 1;
 }

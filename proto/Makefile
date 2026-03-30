@@ -2,8 +2,8 @@
 PROTO_DIR := ./
 PROTO_FILES = $(shell find $(PROTO_DIR) -name '*.proto')
 
-GO_OUT_DIR := ../shared/go
-PYTHON_OUT_DIR := ../shared/python
+GO_OUT_DIR := ../shared/go/v1
+PYTHON_OUT_DIR := ../shared/python/v1
 
 all: generate
 generate: go python
