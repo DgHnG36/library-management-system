@@ -3,6 +3,7 @@ package middleware
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/pkg/errors"
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/pkg/logger"
@@ -38,9 +39,9 @@ func NewRateLimitMiddleware(redisClient *redis.Client, maxRequests, windowSecond
 func (m *RateLimitMiddleware) Handle() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		identifier := c.ClientIP()
-		userRole := c.GetHeader("X-User-Role")
+		userRole := c.GetString("X-User-Role")
 
-		if userRole == "admin" {
+		if strings.ToUpper(userRole) == "ADMIN" {
 			c.Next()
 			return
 		}
@@ -87,4 +88,14 @@ func (m *RateLimitMiddleware) Handle() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+func (m *RateLimitMiddleware) Close() {
+	if err := m.redisClient.Close(); err != nil {
+		m.logger.Error("Failed to close Redis client", err)
+	}
+}
+
+func (m *RateLimitMiddleware) GetRedisClient() *redis.Client {
+	return m.redisClient
 }

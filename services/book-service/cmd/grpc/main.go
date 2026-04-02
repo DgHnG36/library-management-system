@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/DgHnG36/lib-management-system/services/book-service/internal/applications"
 	"github.com/DgHnG36/lib-management-system/services/book-service/internal/config"
@@ -20,64 +19,70 @@ import (
 )
 
 func main() {
-	cfg := config.LoadFromEnv()
+	// Initialize loader
+	loader, err := config.NewConfigLoader()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to initialize config loader: %v", err))
+	}
+	cfg := loader.GetConfig()
 
 	// Initialize root logger
 	logger.Init()
-	svcLogger := logger.GetRootLogger()
-	svcLogger.Info("Starting book-service", logger.Fields{
-		"env":     cfg.Environment,
-		"version": cfg.Version,
-		"port":    cfg.GRPCPort,
-	})
+	rootLogger := logger.GetRootLogger()
+	rootLogger.Info("Logger initialized for book-service")
 
 	// Initialize DB
 	dbCfg := &repository.DBConfig{
-		Host:            cfg.DBHost,
-		Port:            cfg.DBPort,
-		User:            cfg.DBUser,
-		Password:        cfg.DBPassword,
-		DBName:          cfg.DBName,
-		SSLMode:         cfg.DBSSLMode,
-		MaxOpenConns:    cfg.DBMaxOpenConns,
-		MaxIdleConns:    cfg.DBMaxIdleConns,
-		ConnMaxLifetime: time.Duration(cfg.DBConnMaxLifetime) * time.Minute,
+		Host:            cfg.Database.DBHost,
+		Port:            cfg.Database.DBPort,
+		User:            cfg.Database.DBUser,
+		Password:        cfg.Database.DBPwd,
+		DBName:          cfg.Database.DBName,
+		SSLMode:         cfg.Database.DBSSLMode,
+		MaxOpenConns:    cfg.Database.DBMaxOpenConns,
+		MaxIdleConns:    cfg.Database.DBMaxIdleConns,
+		ConnMaxLifetime: cfg.Database.DBConnMaxLifetime,
 	}
 
 	db, err := repository.NewPostgresDB(dbCfg)
 	if err != nil {
-		svcLogger.Fatal("Failed to connect to database", err, logger.Fields{
-			"host": cfg.DBHost,
-			"name": cfg.DBName,
+		rootLogger.Fatal("Failed to connect to database", err, logger.Fields{
+			"addr":    fmt.Sprintf("%s:%s", cfg.Database.DBHost, cfg.Database.DBPort),
+			"db_name": cfg.Database.DBName,
 		})
 	}
-	svcLogger.Info("Connected to database", logger.Fields{"db": cfg.DBName})
+	rootLogger.Info("Connected to database", logger.Fields{
+		"db_name": cfg.Database.DBName,
+	})
 
 	if err := repository.MigrateDB(db); err != nil {
-		svcLogger.Fatal("Failed to migrate database", err)
+		rootLogger.Fatal("Failed to migrate database", err)
 	}
-	svcLogger.Info("Database migrated", logger.Fields{
+	rootLogger.Info("Database migrated", logger.Fields{
 		"tables": []string{models.Book{}.TableName()},
 	})
 
 	// Wire up layers
 	bookRepo := repository.NewBookRepo(db)
-	bookService := applications.NewBookService(bookRepo, svcLogger)
-	bookHandler := handlers.NewBookHandler(bookService, svcLogger)
+	bookService := applications.NewBookService(bookRepo, rootLogger)
+	bookHandler := handlers.NewBookHandler(bookService, rootLogger)
 
 	// Start gRPC server
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
-			interceptor.LoggingInterceptor(svcLogger),
-			interceptor.RecoveryInterceptor(svcLogger),
+			interceptor.MetadataInterceptor(),
+			interceptor.LoggingInterceptor(rootLogger),
+			interceptor.RecoveryInterceptor(rootLogger),
 		),
 	)
 	bookv1.RegisterBookServiceServer(grpcServer, bookHandler)
 
-	addr := fmt.Sprintf(":%d", cfg.GRPCPort)
+	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		svcLogger.Fatal("Failed to listen", err, logger.Fields{"addr": addr})
+		rootLogger.Fatal("Failed to listen", err, logger.Fields{
+			"addr": addr,
+		})
 	}
 
 	go func() {
@@ -87,12 +92,16 @@ func main() {
 	|  _ \| | | | | | | ' /____\___ \|  _| | |_) \ \ / / | | |   |  _|
 	| |_) | |_| | |_| | . <_____|__) | |___|  _ < \ V /  | | |___| |___
 	|____/ \___/ \___/|_|\_\   |____/|_____|_| \_\ \_/  |___\____|_____|
-                    Book Service on port %d | %s | %s
-`, cfg.GRPCPort, cfg.Environment, cfg.Version)
+                    LMS User Service on host %s:%s
+					Environment: %s
+					Version: %s
+`, cfg.Server.Host, cfg.Server.Port, cfg.App.Environment, cfg.App.Version)
 
-		svcLogger.Info("gRPC server started", logger.Fields{"addr": addr})
+		rootLogger.Info("gRPC server started", logger.Fields{
+			"addr": addr,
+		})
 		if err := grpcServer.Serve(listener); err != nil {
-			svcLogger.Fatal("gRPC server failed", err)
+			rootLogger.Fatal("gRPC server failed", err)
 		}
 	}()
 
@@ -101,7 +110,20 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	svcLogger.Info("Shutting down book-service...")
+	rootLogger.Info("Shutting down book-service...")
 	grpcServer.GracefulStop()
-	svcLogger.Info("Book service stopped")
+	rootLogger.Info("Book service stopped", logger.Fields{
+		"host":    cfg.Server.Host,
+		"port":    cfg.Server.Port,
+		"env":     cfg.App.Environment,
+		"version": cfg.App.Version,
+	})
+
+	fmt.Printf(`
+	  ____  ___   ___  ____    ______   _______
+	 / ___|/ _ \ / _ \|  _ \  | __ ) \ / / ____|
+	| |  _| | | | | | | | | | |  _ \\ V /|  _|
+	| |_| | |_| | |_| | |_| | | |_) || | | |___
+	 \____|\___/ \___/|____/  |____/ |_| |_____|
+	`)
 }

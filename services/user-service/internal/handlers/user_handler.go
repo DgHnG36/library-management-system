@@ -15,42 +15,44 @@ import (
 
 type UserHandler struct {
 	userv1.UnimplementedUserServiceServer
-	userSvc *applications.UserService
-	logger  *logger.Logger
+	userService *applications.UserService
+	logger      *logger.Logger
 }
 
-func NewUserHandler(userSvc *applications.UserService, logger *logger.Logger) *UserHandler {
+func NewUserHandler(userService *applications.UserService, logger *logger.Logger) *UserHandler {
 	return &UserHandler{
-		userSvc: userSvc,
-		logger:  logger,
+		userService: userService,
+		logger:      logger,
 	}
 }
 
 func (h *UserHandler) Register(ctx context.Context, req *userv1.RegisterRequest) (*userv1.RegisterResponse, error) {
 	if req.GetUsername() == "" || req.GetPassword() == "" || req.GetEmail() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "username, password and email are required")
+		return nil, status.Error(codes.InvalidArgument, "username, password and email are required")
 	}
 
-	user, err := h.userSvc.Register(ctx, req.Username, req.Password, req.Email, req.PhoneNumber)
+	user, err := h.userService.Register(ctx, req.Username, req.Password, req.Email, req.PhoneNumber)
 	if err != nil {
-		h.logger.Error("Failed to register user", err)
+		h.logger.Error("Failed to register user", err, logger.Fields{
+			"username": req.Username,
+		})
 		return nil, err
 	}
 
 	return &userv1.RegisterResponse{
-		Status:  200,
-		Message: "User registered successfully",
+		Status:  201,
+		Message: "Registered successfully",
 		UserId:  user.ID,
 	}, nil
 }
 
 func (h *UserHandler) Login(ctx context.Context, req *userv1.LoginRequest) (*userv1.LoginResponse, error) {
 	if req.GetPassword() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "password is required")
+		return nil, status.Error(codes.InvalidArgument, "identifier and password are required")
 	}
 
 	var identifier string
-	var byEmail bool
+	byEmail := false
 
 	switch id := req.Identifier.(type) {
 	case *userv1.LoginRequest_Email:
@@ -58,24 +60,25 @@ func (h *UserHandler) Login(ctx context.Context, req *userv1.LoginRequest) (*use
 		byEmail = true
 	case *userv1.LoginRequest_Username:
 		identifier = id.Username
-		byEmail = false
 	default:
-		return nil, status.Errorf(codes.InvalidArgument, "username or email is required")
+		identifier = ""
 	}
 
 	if identifier == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "username or email is required")
+		return nil, status.Error(codes.InvalidArgument, "username or email is required")
 	}
 
-	user, tokenPair, err := h.userSvc.Login(ctx, identifier, req.GetPassword(), byEmail)
-	if err != nil {
-		h.logger.Error("Failed to login", err)
+	user, tokenPair, err := h.userService.Login(ctx, identifier, req.Password, byEmail)
+	if err != nil || user == nil {
+		h.logger.Error("Failed to login", err, logger.Fields{
+			"identifier": identifier,
+		})
 		return nil, err
 	}
 
 	return &userv1.LoginResponse{
 		Status:       200,
-		Message:      "Login successful",
+		Message:      "Login successfully",
 		AccessToken:  tokenPair.AccessToken,
 		RefreshToken: tokenPair.RefreshToken,
 		User:         toPbUser(user),
@@ -84,40 +87,60 @@ func (h *UserHandler) Login(ctx context.Context, req *userv1.LoginRequest) (*use
 
 func (h *UserHandler) GetProfile(ctx context.Context, req *userv1.GetProfileRequest) (*userv1.UserProfileResponse, error) {
 	if req.GetId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "id is required")
+		return nil, status.Error(codes.InvalidArgument, "ID user is required")
 	}
 
-	user, err := h.userSvc.GetProfile(ctx, req.GetId())
-	if err != nil {
-		h.logger.Error("Failed to get profile", err)
+	user, err := h.userService.GetProfile(ctx, req.Id)
+	if err != nil || user == nil {
+		h.logger.Error("Failed to get profile", err, logger.Fields{
+			"user_id": req.Id,
+		})
 		return nil, err
 	}
 
-	return &userv1.UserProfileResponse{User: toPbUser(user)}, nil
+	return &userv1.UserProfileResponse{
+		User: toPbUser(user),
+	}, nil
 }
 
 func (h *UserHandler) UpdateProfile(ctx context.Context, req *userv1.UpdateProfileRequest) (*userv1.UserProfileResponse, error) {
-	if req.GetId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "id is required")
+	if req.GetId() == "" || ctx.Value("X-User-ID") == "" {
+		return nil, status.Error(codes.InvalidArgument, "ID user is required")
 	}
 
-	user, err := h.userSvc.UpdateProfile(ctx, req.GetId(), req.GetUsername(), req.GetEmail(), req.GetPhoneNumber())
-	if err != nil {
-		h.logger.Error("Failed to update profile", err)
+	newUsername := req.GetUsername()
+	newEmail := req.GetEmail()
+	newPhoneNumber := req.GetPhoneNumber()
+
+	user, err := h.userService.UpdateProfile(ctx, req.Id, newUsername, newEmail, newPhoneNumber)
+	if err != nil || user == nil {
+		h.logger.Error("Failed to update profile", err, logger.Fields{
+			"user_id": req.Id,
+		})
 		return nil, err
 	}
 
-	return &userv1.UserProfileResponse{User: toPbUser(user)}, nil
+	return &userv1.UserProfileResponse{
+		User: toPbUser(user),
+	}, nil
 }
 
 func (h *UserHandler) UpdateVIPAccount(ctx context.Context, req *userv1.UpdateVIPAccountRequest) (*userv1.UpdateVIPAccountResponse, error) {
-	if req.GetId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "id is required")
+	userRole := models.UserRole(ctx.Value("X-User-Role").(string))
+	if userRole != models.RoleAdmin {
+		return nil, status.Error(codes.PermissionDenied, "only admins can update VIP status")
 	}
 
-	currentVipStatus, err := h.userSvc.UpdateVIPAccount(ctx, req.GetId(), req.GetIsVip())
+	if req.GetId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "ID user is required")
+	}
+
+	newVIPStatus := req.GetIsVip()
+	currentVipStatus, err := h.userService.UpdateVIPAccount(ctx, req.Id, newVIPStatus)
 	if err != nil {
-		h.logger.Error("Failed to update VIP account", err)
+		h.logger.Error("Failed to update VIP account", err, logger.Fields{
+			"user_id": req.Id,
+		})
 		return nil, err
 	}
 
@@ -134,17 +157,24 @@ func (h *UserHandler) ListUsers(ctx context.Context, req *userv1.ListUsersReques
 	var isDesc bool
 
 	if req.GetPagination() != nil {
-		page = req.GetPagination().GetPage()
-		limit = req.GetPagination().GetLimit()
-		sortBy = req.GetPagination().GetSortBy()
-		isDesc = req.GetPagination().GetIsDesc()
+		page = req.Pagination.GetPage()
+		limit = req.Pagination.GetLimit()
+		sortBy = req.Pagination.GetSortBy()
+		isDesc = req.Pagination.GetIsDesc()
 	}
 
 	callerRole := models.UserRole(ctx.Value("X-User-Role").(string))
+	if callerRole != models.RoleAdmin && callerRole != models.RoleManager {
+		return nil, status.Error(codes.PermissionDenied, "only admins or managers can list users")
+	}
+
 	targetRole := models.UserRole(req.GetRole().String())
-	users, total, err := h.userSvc.ListUsers(ctx, callerRole, page, limit, sortBy, isDesc, targetRole)
-	if err != nil {
-		h.logger.Error("Failed to list users", err)
+	users, total, err := h.userService.ListUsers(ctx, callerRole, page, limit, sortBy, isDesc, targetRole)
+	if err != nil || users == nil {
+		h.logger.Error("Failed to list users", err, logger.Fields{
+			"page":  page,
+			"limit": limit,
+		})
 		return nil, err
 	}
 
@@ -160,13 +190,19 @@ func (h *UserHandler) ListUsers(ctx context.Context, req *userv1.ListUsersReques
 }
 
 func (h *UserHandler) DeleteUsers(ctx context.Context, req *userv1.DeleteUsersRequest) (*commonv1.BaseResponse, error) {
-	if len(req.GetIds()) == 0 {
-		return nil, status.Errorf(codes.InvalidArgument, "ids are required")
+	callerRole := models.UserRole(ctx.Value("X-User-Role").(string))
+	if callerRole != models.RoleAdmin {
+		return nil, status.Error(codes.PermissionDenied, "only admins can delete users")
 	}
 
-	callerRole := models.UserRole(ctx.Value("X-User-Role").(string))
-	if err := h.userSvc.DeleteUsers(ctx, callerRole, req.GetIds()); err != nil {
-		h.logger.Error("Failed to delete users", err)
+	if len(req.GetIds()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "ID users are required")
+	}
+
+	if err := h.userService.DeleteUsers(ctx, callerRole, req.Ids); err != nil {
+		h.logger.Error("Failed to delete users", err, logger.Fields{
+			"user_ids": req.Ids,
+		})
 		return nil, err
 	}
 
@@ -180,7 +216,7 @@ func (h *UserHandler) RefreshToken(ctx context.Context, req *userv1.RefreshToken
 	if req.GetRefreshToken() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "refresh token is required")
 	}
-	tokenPair, err := h.userSvc.RefreshToken(ctx, ctx.Value("X-User-ID").(string), req.GetRefreshToken())
+	tokenPair, err := h.userService.RefreshToken(ctx, ctx.Value("X-User-ID").(string), req.GetRefreshToken())
 	if err != nil {
 		h.logger.Error("Failed to refresh token", err)
 		return nil, err

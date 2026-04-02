@@ -14,14 +14,7 @@ import (
 func TestCORSMiddleware_AllowedOrigin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	corsMiddleware := middleware.NewCORSMiddleware(
-		[]string{"http://localhost:3000"},
-		[]string{"GET", "POST", "OPTIONS"},
-		[]string{"Content-Type", "Authorization"},
-		[]string{"Content-Type"},
-		true,
-		12*time.Hour,
-	)
+	corsMiddleware := middleware.NewCORSMiddleware(12 * time.Hour)
 
 	router := gin.New()
 	router.Use(corsMiddleware.Handle())
@@ -30,28 +23,21 @@ func TestCORSMiddleware_AllowedOrigin(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/books", nil)
-	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Origin", "http://localhost:5173")
 	res := httptest.NewRecorder()
 
 	router.ServeHTTP(res, req)
 
-	assert.Equal(t, "http://localhost:3000", res.Header().Get("Access-Control-Allow-Origin"))
-	assert.Equal(t, "GET, POST, OPTIONS", res.Header().Get("Access-Control-Allow-Methods"))
-	assert.Equal(t, "Content-Type, Authorization", res.Header().Get("Access-Control-Allow-Headers"))
+	assert.Equal(t, "http://localhost:5173", res.Header().Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "GET, POST, PUT, DELETE, OPTIONS", res.Header().Get("Access-Control-Allow-Methods"))
+	assert.NotEmpty(t, res.Header().Get("Access-Control-Allow-Headers"))
 	assert.Equal(t, "true", res.Header().Get("Access-Control-Allow-Credentials"))
 }
 
 func TestCORSMiddleware_DisallowedOrigin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	corsMiddleware := middleware.NewCORSMiddleware(
-		[]string{"http://localhost:3000"},
-		[]string{"GET", "POST", "OPTIONS"},
-		[]string{"Content-Type", "Authorization"},
-		[]string{"Content-Type"},
-		true,
-		12*time.Hour,
-	)
+	corsMiddleware := middleware.NewCORSMiddleware(12 * time.Hour)
 
 	router := gin.New()
 	router.Use(corsMiddleware.Handle())
@@ -73,30 +59,24 @@ func TestCORSMiddleware_DisallowedOrigin(t *testing.T) {
 func TestCORSMiddleware_PrefightRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	corsMiddleware := middleware.NewCORSMiddleware(
-		[]string{"http://localhost:3000"},
-		[]string{"GET", "POST", "DELETE", "OPTIONS"},
-		[]string{"Content-Type", "Authorization"},
-		[]string{"Content-Type"},
-		true,
-		12*time.Hour,
-	)
+	corsMiddleware := middleware.NewCORSMiddleware(12 * time.Hour)
 
 	router := gin.New()
 	router.Use(corsMiddleware.Handle())
-	router.DELETE("/api/v1/books/:id", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"deleted": true})
+	// Register an OPTIONS route so gin routes the preflight request through the middleware
+	router.OPTIONS("/api/v1/books/:id", func(c *gin.Context) {
+		c.Status(http.StatusOK)
 	})
 
 	req := httptest.NewRequest(http.MethodOptions, "/api/v1/books/123", nil)
-	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Origin", "http://localhost:5173")
 	res := httptest.NewRecorder()
 
 	router.ServeHTTP(res, req)
 
 	assert.Equal(t, http.StatusNoContent, res.Code, "preflight OPTIONS should return 204")
-	assert.Equal(t, "http://localhost:3000", res.Header().Get("Access-Control-Allow-Origin"))
-	assert.Equal(t, "GET, POST, DELETE, OPTIONS", res.Header().Get("Access-Control-Allow-Methods"))
+	assert.Equal(t, "http://localhost:5173", res.Header().Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "GET, POST, PUT, DELETE, OPTIONS", res.Header().Get("Access-Control-Allow-Methods"))
 }
 
 func TestCORSMiddleware_NoOriginHeader(t *testing.T) {

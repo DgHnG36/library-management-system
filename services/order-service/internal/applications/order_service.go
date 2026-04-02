@@ -14,6 +14,7 @@ import (
 	userv1 "github.com/DgHnG36/lib-management-system/shared/go/v1/user"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -47,16 +48,23 @@ func (s *OrderService) CreateOrder(ctx context.Context, userID string, bookIDs [
 		err    error
 	}
 	results := make(chan availResult, len(bookIDs))
+	bookCtx := svcCtx(ctx)
 	for _, bookID := range bookIDs {
 		go func(bID string) {
-			resp, err := s.bookClient.CheckAvailability(ctx, &bookv1.CheckAvailabilityRequest{
+			resp, err := s.bookClient.CheckAvailability(bookCtx, &bookv1.CheckAvailabilityRequest{
 				BookId: bID,
 			})
 			if err != nil || resp == nil {
-				results <- availResult{bookID: bID, err: fmt.Errorf("book %s not available", bID)}
+				results <- availResult{
+					bookID: bID,
+					err:    fmt.Errorf("book %s not available", bID),
+				}
 				return
 			}
-			results <- availResult{bookID: bID, err: nil}
+			results <- availResult{
+				bookID: bID,
+				err:    nil,
+			}
 		}(bookID)
 	}
 
@@ -96,12 +104,14 @@ func (s *OrderService) CreateOrder(ctx context.Context, userID string, bookIDs [
 	// Update book quantity
 	for _, bookID := range bookIDs {
 		go func(bID string) {
-			_, err := s.bookClient.UpdateBookQuantity(ctx, &bookv1.UpdateBookQuantityRequest{
+			_, err := s.bookClient.UpdateBookQuantity(bookCtx, &bookv1.UpdateBookQuantityRequest{
 				BookId:       bID,
 				ChangeAmount: -1,
 			})
 			if err != nil {
-				s.logger.Error("Failed to update book quantity", err, logger.Fields{"book_id": bID})
+				s.logger.Error("Failed to update book quantity", err, logger.Fields{
+					"book_id": bID,
+				})
 			}
 		}(bookID)
 	}
@@ -195,9 +205,6 @@ func (s *OrderService) ListMyOrders(ctx context.Context, userID string, page, li
 		"user_id": userID,
 		"page":    page,
 		"limit":   limit,
-		"sort_by": sortBy,
-		"is_desc": isDesc,
-		"status":  filterStatus,
 	})
 	if page <= 0 {
 		page = 1
@@ -217,12 +224,8 @@ func (s *OrderService) ListMyOrders(ctx context.Context, userID string, page, li
 
 func (s *OrderService) ListAllOrders(ctx context.Context, page, limit int32, sortBy string, isDesc bool, filterStatus models.OrderStatus, searchUserID string) ([]*models.Order, int32, error) {
 	s.logger.Debug("Listing all orders", logger.Fields{
-		"page":           page,
-		"limit":          limit,
-		"sort_by":        sortBy,
-		"is_desc":        isDesc,
-		"status":         filterStatus,
-		"search_user_id": searchUserID,
+		"page":  page,
+		"limit": limit,
 	})
 
 	if page <= 0 {
@@ -251,9 +254,10 @@ func (s *OrderService) UpdateOrderStatus(ctx context.Context, orderID string, ne
 			return nil, status.Errorf(codes.Internal, "failed to update return info: %v", err)
 		}
 
+		bookCtx := svcCtx(ctx)
 		for _, ob := range order.Books {
 			go func(bID string) {
-				_, err := s.bookClient.UpdateBookQuantity(ctx, &bookv1.UpdateBookQuantityRequest{
+				_, err := s.bookClient.UpdateBookQuantity(bookCtx, &bookv1.UpdateBookQuantityRequest{
 					BookId:       bID,
 					ChangeAmount: +1,
 				})
@@ -290,11 +294,17 @@ func (s *OrderService) CancelOrder(ctx context.Context, orderID string, userID s
 		return nil, status.Errorf(codes.FailedPrecondition, "cannot cancel order: not found, not yours, or not in PENDING status")
 	}
 
+	s.logger.Info("Order canceled successfully", logger.Fields{
+		"order_id": orderID,
+		"user_id":  userID,
+	})
+
 	order, _ := s.orderRepo.FindByID(ctx, orderID)
 
+	bookCtx := svcCtx(ctx)
 	for _, ob := range order.Books {
 		go func(bID string) {
-			_, err := s.bookClient.UpdateBookQuantity(ctx, &bookv1.UpdateBookQuantityRequest{
+			_, err := s.bookClient.UpdateBookQuantity(bookCtx, &bookv1.UpdateBookQuantityRequest{
 				BookId:       bID,
 				ChangeAmount: +1,
 			})
@@ -315,6 +325,15 @@ func (s *OrderService) CancelOrder(ctx context.Context, orderID string, userID s
 }
 
 /* HELPER METHODS */
+
+// svcCtx returns a context with outgoing gRPC metadata that identifies this
+// call as an internal system request. Backend services (e.g. book-service) use
+// this metadata to authorise service-to-service calls without requiring a
+// user-level role.
+func svcCtx(ctx context.Context) context.Context {
+	return metadata.NewOutgoingContext(ctx, metadata.Pairs("X-User-Role", "SYSTEM"))
+}
+
 func (s *OrderService) calculatePenalty(order *models.Order) int32 {
 	if order.ReturnDate == nil {
 		now := time.Now().UTC()

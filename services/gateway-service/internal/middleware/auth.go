@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DgHnG36/lib-management-system/services/gateway-service/internal/clients"
+	"github.com/DgHnG36/lib-management-system/services/gateway-service/internal/clients/user_service_client"
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/pkg/errors"
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/pkg/logger"
 	jwt "github.com/dgrijalva/jwt-go"
@@ -22,20 +22,21 @@ type JWTClaims struct {
 type AuthMiddleware struct {
 	jwtSecret    []byte
 	jwtAlgorithm string
-	logger       *logger.Logger
+	expMins      time.Duration
 	skipPaths    map[string]bool
-	grpcHandler  *clients.ClientManager
+
+	jwtHandler *user_service_client.JWTRefresher
+
+	logger *logger.Logger
 }
 
-func NewAuthMiddleware(jwtSecret []byte, jwtAlgorithm string, logger *logger.Logger, grpcHandler *clients.ClientManager) *AuthMiddleware {
+func NewAuthMiddleware(jwtSecret []byte, jwtAlgorithm string, expMins time.Duration, jwtHandler *user_service_client.JWTRefresher, logger *logger.Logger) *AuthMiddleware {
 	skipPaths := map[string]bool{
 		"/api/v1/auth/register": true,
 		"/api/v1/auth/login":    true,
 		"/healthy":              true,
 		"/ready":                true,
 		"/metrics":              true,
-
-		"/api/v1/books": true, // Allow public access to book listings
 	}
 
 	if jwtAlgorithm == "" {
@@ -45,44 +46,46 @@ func NewAuthMiddleware(jwtSecret []byte, jwtAlgorithm string, logger *logger.Log
 	return &AuthMiddleware{
 		jwtSecret:    jwtSecret,
 		jwtAlgorithm: jwtAlgorithm,
-		logger:       logger,
+		expMins:      expMins,
 		skipPaths:    skipPaths,
-		grpcHandler:  grpcHandler,
+		logger:       logger,
+		jwtHandler:   jwtHandler,
 	}
 }
 
 func (m *AuthMiddleware) Handle() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		path := c.FullPath()
 		authHeader := c.GetHeader("Authorization")
 
-		if m.skipPaths[c.FullPath()] || authHeader == "" {
-			m.defaultHeader(c)
+		// Check Skip Paths or Public Books
+		if m.skipPaths[path] || strings.HasPrefix(c.Request.URL.Path, "/api/v1/books") {
+			m.setGuestContext(c)
 			c.Next()
+			return
+		}
+
+		// Check Authorization Header
+		if authHeader == "" {
+			m.abortUnauthorized(c, "Missing authorization header")
 			return
 		}
 
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			if m.skipPaths[c.FullPath()] {
-				m.defaultHeader(c)
-				c.Next()
-				return
-			}
-			appErr := errors.ErrUnauthorized.Clone().WithMessage("Invalid authorization header format")
-			m.logger.Warn("Invalid authorization header format")
-			c.AbortWithStatusJSON(int(appErr.HTTPStatus), appErr)
+			m.abortUnauthorized(c, "Invalid authorization header format")
 			return
 		}
 
+		// Validate Token
 		tokenStr := parts[1]
 		claims, err := m.validateToken(tokenStr)
 		if err != nil {
-			appErr := errors.ErrUnauthorized.Clone().WithMessage("Invalid token attempt")
-			m.logger.Warn("Invalid token attempt")
-			c.AbortWithStatusJSON(int(appErr.HTTPStatus), appErr)
+			m.abortUnauthorized(c, "Invalid or expired token")
 			return
 		}
 
+		// Check Sliding Window for Token Refresh
 		if m.isInSlidingWindow(claims.ExpiresAt) {
 			m.logger.Info("Token is in sliding window, consider refreshing", logger.Fields{
 				"user_id":    claims.UserID,
@@ -90,19 +93,43 @@ func (m *AuthMiddleware) Handle() gin.HandlerFunc {
 			})
 
 			rt := c.GetHeader("X-Refresh-Token")
-			newTokens, err := m.grpcHandler.RefreshToken(c, claims.UserID, rt)
-			if err == nil {
-				m.logger.Info("Token refreshed successfully", logger.Fields{
-					"user_id": claims.UserID,
-				})
-				c.Header("X-New-Access-Token", newTokens.AccessToken)
-				c.Header("X-New-Refresh-Token", newTokens.RefreshToken)
+			if rt != "" {
+				newTokens, err := m.jwtHandler.RefreshToken(c.Request.Context(), rt)
+				if err == nil {
+					c.Header("X-New-Access-Token", newTokens.AccessToken)
+					c.Header("X-New-Refresh-Token", newTokens.RefreshToken)
+					m.logger.Info("Token refreshed successfully", logger.Fields{
+						"user_id": claims.UserID,
+					})
+				}
 			}
 		}
 
 		c.Set("X-User-ID", claims.UserID)
 		c.Set("X-User-Role", claims.Role)
 		c.Next()
+	}
+}
+
+func (m *AuthMiddleware) RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role := c.GetString("X-User-Role")
+		role = strings.ToUpper(role)
+		if role != "ADMIN" {
+			m.abortForbidden(c, "Admin privileges required")
+			return
+		}
+	}
+}
+
+func (m *AuthMiddleware) RequireAdminOrManager() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role := c.GetString("X-User-Role")
+		role = strings.ToUpper(role)
+		if role != "ADMIN" && role != "MANAGER" {
+			m.abortForbidden(c, "Admin or Manager privileges required")
+			return
+		}
 	}
 }
 
@@ -127,14 +154,27 @@ func (m *AuthMiddleware) validateToken(tokenStr string) (*JWTClaims, error) {
 	return nil, errors.ErrUnauthorized.Clone().WithMessage("Invalid token")
 }
 
-func (m *AuthMiddleware) defaultHeader(c *gin.Context) {
+func (m *AuthMiddleware) setGuestContext(c *gin.Context) {
 	c.Request.Header.Set("X-User-ID", uuid.New().String())
 	c.Request.Header.Set("X-User-Role", "guest")
+}
+
+func (m *AuthMiddleware) abortUnauthorized(c *gin.Context, msg string) {
+	appErr := errors.ErrUnauthorized.Clone().WithMessage(msg)
+	c.AbortWithStatusJSON(int(appErr.HTTPStatus), appErr)
+}
+
+func (m *AuthMiddleware) abortForbidden(c *gin.Context, msg string) {
+	appErr := errors.ErrForbidden.Clone().WithMessage(msg)
+	c.AbortWithStatusJSON(int(appErr.HTTPStatus), appErr)
 }
 
 func (m *AuthMiddleware) isInSlidingWindow(expiresAt int64) bool {
 	expTime := time.Unix(expiresAt, 0)
 	timeLeft := time.Until(expTime)
-	const windowDuration = 5 * time.Minute
+	windowDuration := m.expMins / 5 // refresh within the last 20% of token lifetime
+	if windowDuration < time.Minute {
+		windowDuration = time.Minute
+	}
 	return timeLeft > 0 && timeLeft <= windowDuration
 }

@@ -33,10 +33,11 @@ func TestRateLimitMiddleware_AdminBypass(t *testing.T) {
 	router := gin.New()
 	hitHandler := false
 	router.Use(func(c *gin.Context) {
-		// Set the role before the rate limit middleware
-		c.Set("role", "admin")
-		rlm.Handle()(c)
+		// Simulate auth middleware setting the role in gin context
+		c.Set("X-User-Role", "ADMIN")
+		c.Next()
 	})
+	router.Use(rlm.Handle())
 	router.GET("/api/test", func(c *gin.Context) {
 		hitHandler = true
 		c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -102,8 +103,9 @@ func TestRateLimitMiddleware_LimitExceeded(t *testing.T) {
 	})
 
 	// Clear any existing rate limit keys for httptest default IP (192.0.2.1)
+	// Key format: ratelimit:{role}:{ip} — role is empty for unauthenticated requests
 	ctx := context.Background()
-	redisClient.Del(ctx, "ratelimit:192.0.2.1")
+	redisClient.Del(ctx, "ratelimit::192.0.2.1")
 
 	// Make 3 requests (limit is 2)
 	// httptest defaults to 192.0.2.1 as the remote address

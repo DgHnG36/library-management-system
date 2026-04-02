@@ -44,7 +44,7 @@ func (s *UserService) Register(ctx context.Context, username, password, email, p
 		return nil, status.Errorf(codes.Internal, "failed to check username: %v", err)
 	}
 	if existing != nil {
-		return nil, status.Errorf(codes.AlreadyExists, "username already exists")
+		return nil, status.Errorf(codes.AlreadyExists, "username already exists: %s", username)
 	}
 
 	existing, err = s.userRepo.FindByEmail(ctx, email)
@@ -52,7 +52,7 @@ func (s *UserService) Register(ctx context.Context, username, password, email, p
 		return nil, status.Errorf(codes.Internal, "failed to check email: %v", err)
 	}
 	if existing != nil {
-		return nil, status.Errorf(codes.AlreadyExists, "email already exists")
+		return nil, status.Errorf(codes.AlreadyExists, "email already exists: %s", email)
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -99,27 +99,27 @@ func (s *UserService) Login(ctx context.Context, identifier, password string, by
 	}
 
 	if err != nil {
-		return nil, nil, status.Errorf(codes.Internal, "failed to find user: %v", err)
+		return nil, &TokenPair{}, status.Errorf(codes.Internal, "failed to find user: %v", err)
 	}
 	if loginUser == nil {
-		return nil, nil, status.Errorf(codes.NotFound, "invalid credentials")
+		return nil, &TokenPair{}, status.Error(codes.NotFound, "invalid credentials")
 	}
 	if !loginUser.IsActive {
-		return nil, nil, status.Errorf(codes.PermissionDenied, "account is inactive")
+		return nil, &TokenPair{}, status.Error(codes.PermissionDenied, "account is inactive")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(loginUser.Password), []byte(password)); err != nil {
-		return nil, nil, status.Errorf(codes.Unauthenticated, "invalid credentials")
+		return nil, &TokenPair{}, status.Error(codes.Unauthenticated, "invalid credentials")
 	}
 
 	tokenPair, tokenHashed, expiresAt, err := s.jwtService.GenerateTokenPair(loginUser)
 	if err != nil {
-		return nil, nil, status.Errorf(codes.Internal, "failed to generate token: %v", err)
+		return nil, &TokenPair{}, status.Errorf(codes.Internal, "failed to generate token: %v", err)
 	}
 
 	err = s.userRepo.StoreRefreshToken(ctx, loginUser.ID, tokenHashed, expiresAt)
 	if err != nil {
-		return nil, nil, status.Errorf(codes.Internal, "failed to store refresh token: %v", err)
+		return nil, &TokenPair{}, status.Errorf(codes.Internal, "failed to store refresh token: %v", err)
 	}
 
 	s.logger.Info("User logged in", logger.Fields{
@@ -129,7 +129,7 @@ func (s *UserService) Login(ctx context.Context, identifier, password string, by
 }
 
 func (s *UserService) GetProfile(ctx context.Context, userID string) (*models.User, error) {
-	s.logger.Info("Getting user profile", logger.Fields{
+	s.logger.Debug("Getting user profile", logger.Fields{
 		"user_id": userID,
 	})
 
@@ -138,14 +138,18 @@ func (s *UserService) GetProfile(ctx context.Context, userID string) (*models.Us
 		return nil, status.Errorf(codes.Internal, "failed to find user: %v", err)
 	}
 	if user == nil {
-		return nil, status.Errorf(codes.NotFound, "user not found")
+		return nil, status.Error(codes.NotFound, "user not found")
 	}
+
+	s.logger.Debug("User profile retrieved", logger.Fields{
+		"user_id": userID,
+	})
 
 	return user, nil
 }
 
 func (s *UserService) UpdateProfile(ctx context.Context, userID, username, email, phoneNumber string) (*models.User, error) {
-	s.logger.Info("Updating user profile", logger.Fields{
+	s.logger.Debug("Updating user profile", logger.Fields{
 		"user_id": userID,
 	})
 
@@ -187,11 +191,18 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID, username, email
 		return nil, status.Errorf(codes.Internal, "failed to update user: %v", err)
 	}
 
+	s.logger.Debug("User profile updated", logger.Fields{
+		"user_id": user.ID,
+	})
+
 	return user, nil
 }
 
 func (s *UserService) UpdateVIPAccount(ctx context.Context, id string, isVip bool) (bool, error) {
-	s.logger.Info("Updating VIP status", logger.Fields{"user_id": id, "is_vip": isVip})
+	s.logger.Info("Updating VIP status", logger.Fields{
+		"user_id": id,
+		"is_vip":  isVip,
+	})
 
 	user, err := s.userRepo.FindByID(ctx, id)
 	if err != nil {
@@ -205,12 +216,17 @@ func (s *UserService) UpdateVIPAccount(ctx context.Context, id string, isVip boo
 		return false, status.Errorf(codes.Internal, "failed to update VIP status: %v", err)
 	}
 
+	s.logger.Info("VIP status updated", logger.Fields{
+		"user_id": id,
+		"is_vip":  isVip,
+	})
+
 	return isVip, nil
 }
 
 func (s *UserService) ListUsers(ctx context.Context, callerRole models.UserRole, page, limit int32, sortBy string, isDesc bool, targetRole models.UserRole) ([]*models.User, int32, error) {
 	if callerRole == models.RoleGuest || callerRole == models.RoleRegisteredUser {
-		return nil, 0, status.Errorf(codes.PermissionDenied, "insufficient permissions to list users")
+		return nil, 0, status.Error(codes.PermissionDenied, "insufficient permissions to list users")
 	}
 
 	if page <= 0 {
@@ -220,29 +236,47 @@ func (s *UserService) ListUsers(ctx context.Context, callerRole models.UserRole,
 		limit = 10
 	}
 
+	s.logger.Debug("Listing users", logger.Fields{
+		"page":  page,
+		"limit": limit,
+	})
+
 	users, total, err := s.userRepo.List(ctx, page, limit, sortBy, isDesc, targetRole)
 	if err != nil {
 		return nil, 0, status.Errorf(codes.Internal, "failed to list users: %v", err)
 	}
+
+	s.logger.Debug("Users listed", logger.Fields{
+		"page":  page,
+		"limit": limit,
+		"total": total,
+	})
+
 	return users, total, nil
 }
 
 func (s *UserService) DeleteUsers(ctx context.Context, callerRole models.UserRole, ids []string) error {
 	if callerRole != models.RoleAdmin {
-		return status.Errorf(codes.PermissionDenied, "insufficient permissions to delete users")
+		return status.Error(codes.PermissionDenied, "insufficient permissions to delete users")
 	}
 
-	s.logger.Info("Deleting users", logger.Fields{"ids": ids})
+	s.logger.Info("Deleting users", logger.Fields{
+		"user_ids": ids,
+	})
 
 	if err := s.userRepo.Delete(ctx, ids); err != nil {
 		return status.Errorf(codes.Internal, "failed to delete users: %v", err)
 	}
 
+	s.logger.Info("Users deleted", logger.Fields{
+		"user_ids": ids,
+	})
+
 	return nil
 }
 
 func (s *UserService) RefreshToken(ctx context.Context, userID, refreshToken string) (*TokenPair, error) {
-	s.logger.Info("Refreshing token", logger.Fields{
+	s.logger.Debug("Refreshing token", logger.Fields{
 		"user_id": userID,
 	})
 
@@ -258,6 +292,9 @@ func (s *UserService) RefreshToken(ctx context.Context, userID, refreshToken str
 
 	if time.Now().After(userToken.ExpiresAt) {
 		s.userRepo.DeleteRefreshToken(ctx, tokenHashed)
+		s.logger.Debug("Refresh token expired", logger.Fields{
+			"user_id": userID,
+		})
 		return nil, status.Errorf(codes.Unauthenticated, "refresh token expired")
 	}
 
@@ -278,6 +315,10 @@ func (s *UserService) RefreshToken(ctx context.Context, userID, refreshToken str
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to store refresh token: %v", err)
 	}
+
+	s.logger.Debug("Token refreshed", logger.Fields{
+		"user_id": userID,
+	})
 
 	return tokenPair, nil
 }

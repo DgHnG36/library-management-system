@@ -15,14 +15,14 @@ import (
 
 type BookHandler struct {
 	bookv1.UnimplementedBookServiceServer
-	bookSvc *applications.BookService
-	logger  *logger.Logger
+	bookService *applications.BookService
+	logger      *logger.Logger
 }
 
-func NewBookHandler(bookSvc *applications.BookService, logger *logger.Logger) *BookHandler {
+func NewBookHandler(bookService *applications.BookService, logger *logger.Logger) *BookHandler {
 	return &BookHandler{
-		bookSvc: bookSvc,
-		logger:  logger,
+		bookService: bookService,
+		logger:      logger,
 	}
 }
 
@@ -35,16 +35,21 @@ func (h *BookHandler) GetBook(ctx context.Context, req *bookv1.GetBookRequest) (
 	case *bookv1.GetBookRequest_Title:
 		title = ident.Title
 	default:
-		return nil, status.Errorf(codes.InvalidArgument, "id or title is required")
+		return nil, status.Error(codes.InvalidArgument, "ID or Title is required")
 	}
 
-	book, err := h.bookSvc.GetBook(ctx, id, title)
+	book, err := h.bookService.GetBook(ctx, id, title)
 	if err != nil {
-		h.logger.Error("Failed to get book", err)
+		h.logger.Error("Failed to get book", err, logger.Fields{
+			"id":    id,
+			"title": title,
+		})
 		return nil, err
 	}
 
-	return &bookv1.BookResponse{Book: toPbBook(book)}, nil
+	return &bookv1.BookResponse{
+		Book: toPbBook(book),
+	}, nil
 }
 
 func (h *BookHandler) ListBooks(ctx context.Context, req *bookv1.ListBooksRequest) (*bookv1.ListBooksResponse, error) {
@@ -53,15 +58,21 @@ func (h *BookHandler) ListBooks(ctx context.Context, req *bookv1.ListBooksReques
 	var isDesc bool
 
 	if req.GetPagination() != nil {
-		page = req.GetPagination().GetPage()
-		limit = req.GetPagination().GetLimit()
-		sortBy = req.GetPagination().GetSortBy()
-		isDesc = req.GetPagination().GetIsDesc()
+		page = req.Pagination.GetPage()
+		limit = req.Pagination.GetLimit()
+		sortBy = req.Pagination.GetSortBy()
+		isDesc = req.Pagination.GetIsDesc()
 	}
 
-	books, total, err := h.bookSvc.ListBooks(ctx, page, limit, sortBy, isDesc, req.GetSearchQuery(), req.GetCategory())
+	searchQuery := req.GetSearchQuery()
+	category := req.GetCategory()
+
+	books, total, err := h.bookService.ListBooks(ctx, page, limit, sortBy, isDesc, searchQuery, category)
 	if err != nil {
-		h.logger.Error("Failed to list books", err)
+		h.logger.Error("Failed to list books", err, logger.Fields{
+			"page":  page,
+			"limit": limit,
+		})
 		return nil, err
 	}
 
@@ -77,8 +88,13 @@ func (h *BookHandler) ListBooks(ctx context.Context, req *bookv1.ListBooksReques
 }
 
 func (h *BookHandler) CreateBooks(ctx context.Context, req *bookv1.CreateBooksRequest) (*bookv1.CreateBooksResponse, error) {
+	role := ctx.Value("X-User-Role")
+	if role != "ADMIN" && role != "MANAGER" {
+		return nil, status.Error(codes.PermissionDenied, "only admins and managers can create books")
+	}
+
 	if len(req.GetBooks()) == 0 {
-		return nil, status.Errorf(codes.InvalidArgument, "at least one book is required")
+		return nil, status.Error(codes.InvalidArgument, "at least one book is required")
 	}
 
 	payloads := make([]applications.CreateBookPayload, len(req.GetBooks()))
@@ -93,7 +109,7 @@ func (h *BookHandler) CreateBooks(ctx context.Context, req *bookv1.CreateBooksRe
 		}
 	}
 
-	books, err := h.bookSvc.CreateBooks(ctx, payloads)
+	books, err := h.bookService.CreateBooks(ctx, payloads)
 	if err != nil {
 		h.logger.Error("Failed to create books", err)
 		return nil, err
@@ -111,33 +127,55 @@ func (h *BookHandler) CreateBooks(ctx context.Context, req *bookv1.CreateBooksRe
 }
 
 func (h *BookHandler) UpdateBook(ctx context.Context, req *bookv1.UpdateBookRequest) (*bookv1.BookResponse, error) {
-	if req.GetId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "id is required")
+	role := ctx.Value("X-User-Role")
+	if role != "ADMIN" && role != "MANAGER" {
+		return nil, status.Error(codes.PermissionDenied, "only admins and managers can update books")
 	}
 
-	book, err := h.bookSvc.UpdateBook(ctx,
-		req.GetId(),
-		req.GetTitle(),
-		req.GetAuthor(),
-		req.GetIsbn(),
-		req.GetCategory(),
-		req.GetDescription(),
+	if req.GetId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "ID book is required")
+	}
+
+	titleBook := req.GetTitle()
+	author := req.GetAuthor()
+	isbn := req.GetIsbn()
+	category := req.GetCategory()
+	description := req.GetDescription()
+
+	book, err := h.bookService.UpdateBook(ctx,
+		req.Id,
+		titleBook,
+		author,
+		isbn,
+		category,
+		description,
 	)
 	if err != nil {
-		h.logger.Error("Failed to update book", err)
+		h.logger.Error("Failed to update book", err, logger.Fields{
+			"book_id": req.Id,
+		})
 		return nil, err
 	}
 
-	return &bookv1.BookResponse{Book: toPbBook(book)}, nil
+	return &bookv1.BookResponse{
+		Book: toPbBook(book),
+	}, nil
 }
 
 func (h *BookHandler) DeleteBooks(ctx context.Context, req *bookv1.DeleteBooksRequest) (*commonv1.BaseResponse, error) {
-	if len(req.GetIds()) == 0 {
-		return nil, status.Errorf(codes.InvalidArgument, "ids are required")
+	role := ctx.Value("X-User-Role")
+	if role != "ADMIN" && role != "MANAGER" {
+		return nil, status.Error(codes.PermissionDenied, "only admins and managers can delete books")
 	}
 
-	if err := h.bookSvc.DeleteBooks(ctx, req.GetIds()); err != nil {
-		h.logger.Error("Failed to delete books", err)
+	if len(req.GetIds()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "ID books are required")
+	}
+
+	if err := h.bookService.DeleteBooks(ctx, req.GetIds()); err != nil {
+		h.logger.Error("Failed to delete books", err, logger.Fields{
+			"book_ids": req.Ids,
+		})
 		return nil, err
 	}
 
@@ -148,13 +186,20 @@ func (h *BookHandler) DeleteBooks(ctx context.Context, req *bookv1.DeleteBooksRe
 }
 
 func (h *BookHandler) CheckAvailability(ctx context.Context, req *bookv1.CheckAvailabilityRequest) (*bookv1.CheckAvailabilityResponse, error) {
-	if req.GetBookId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "book_id is required")
+	role := ctx.Value("X-User-Role")
+	if role != "ADMIN" && role != "MANAGER" && role != "SYSTEM" {
+		return nil, status.Error(codes.PermissionDenied, "only admins, managers, and users can check book availability")
 	}
 
-	isAvailable, qty, err := h.bookSvc.CheckAvailability(ctx, req.GetBookId())
+	if req.GetBookId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "ID book is required")
+	}
+
+	isAvailable, qty, err := h.bookService.CheckAvailability(ctx, req.BookId)
 	if err != nil {
-		h.logger.Error("Failed to check availability", err)
+		h.logger.Error("Failed to check availability", err, logger.Fields{
+			"book_id": req.BookId,
+		})
 		return nil, err
 	}
 
@@ -165,13 +210,21 @@ func (h *BookHandler) CheckAvailability(ctx context.Context, req *bookv1.CheckAv
 }
 
 func (h *BookHandler) UpdateBookQuantity(ctx context.Context, req *bookv1.UpdateBookQuantityRequest) (*bookv1.UpdateBookQuantityResponse, error) {
-	if req.GetBookId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "book_id is required")
+	role := ctx.Value("X-User-Role")
+	if role != "ADMIN" && role != "MANAGER" && role != "SYSTEM" {
+		return nil, status.Error(codes.PermissionDenied, "only admins and managers can update book quantity")
 	}
 
-	newQty, err := h.bookSvc.UpdateBookQuantity(ctx, req.GetBookId(), req.GetChangeAmount())
+	if req.GetBookId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "ID book is required")
+	}
+
+	newQty, err := h.bookService.UpdateBookQuantity(ctx, req.GetBookId(), req.GetChangeAmount())
 	if err != nil {
-		h.logger.Error("Failed to update book quantity", err)
+		h.logger.Error("Failed to update book quantity", err, logger.Fields{
+			"book_id":       req.BookId,
+			"change_amount": req.ChangeAmount,
+		})
 		return nil, err
 	}
 

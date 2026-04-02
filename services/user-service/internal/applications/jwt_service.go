@@ -4,10 +4,11 @@ import (
 	"crypto/sha256"
 	"time"
 
-	"github.com/DgHnG36/lib-management-system/services/gateway-service/pkg/errors"
 	"github.com/DgHnG36/lib-management-system/services/user-service/internal/models"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type JWTClaims struct {
@@ -93,19 +94,19 @@ func (s *JWTService) HashRefreshToken(token string) string {
 func (s *JWTService) ValidateAccessToken(tokenStr string) (*JWTClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if token.Method.Alg() != s.jwtAlgorithm {
-			return nil, errors.ErrUnauthorized.Clone().WithMessage("Unexpected signing method: " + token.Method.Alg())
+			return nil, status.Error(codes.Unauthenticated, "unexpected signing method")
 		}
 
 		return s.jwtSecret, nil
 	})
 
 	if err != nil {
-		return nil, errors.WrapError(err, errors.CodeInternalError, "unexpected error during token validation")
+		return nil, status.Error(codes.Internal, "unexpected error during token validation")
 	}
 
 	if claims, ok := token.Claims.(*JWTClaims); ok && token.Valid {
 		return claims, nil
 	}
 
-	return nil, errors.ErrUnauthorized.Clone().WithMessage("Invalid token")
+	return nil, status.Error(codes.Unauthenticated, "invalid token")
 }

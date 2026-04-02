@@ -92,6 +92,35 @@ func (e *AppError) ToGRPCError() error {
 	return status.Error(e.GRPCStatus, e.Message)
 }
 
+func FromGRPCError(err error) *AppError {
+	st, ok := status.FromError(err)
+	if !ok {
+		return ErrInternalError.Clone()
+	}
+	switch st.Code() {
+	case codes.AlreadyExists:
+		return ErrAlreadyExists.Clone().WithMessage(st.Message())
+	case codes.NotFound:
+		return ErrNotFound.Clone().WithMessage(st.Message())
+	case codes.InvalidArgument:
+		return ErrBadRequest.Clone().WithMessage(st.Message())
+	case codes.Unauthenticated:
+		return ErrUnauthorized.Clone().WithMessage(st.Message())
+	case codes.PermissionDenied:
+		return ErrForbidden.Clone().WithMessage(st.Message())
+	case codes.DeadlineExceeded:
+		return ErrTimeout.Clone().WithMessage(st.Message())
+	case codes.Unavailable:
+		return ErrServiceUnavailable.Clone().WithMessage(st.Message())
+	case codes.ResourceExhausted:
+		return ErrRateLimitExceeded.Clone().WithMessage(st.Message())
+	case codes.Aborted:
+		return ErrConflict.Clone().WithMessage(st.Message())
+	default:
+		return ErrInternalError.Clone().WithMessage(st.Message())
+	}
+}
+
 /* CONSTANT ERROR MODELS */
 var (
 	ErrInternalError      = NewAppError(CodeInternalError, "Internal server error", nil, 500, codes.Internal)

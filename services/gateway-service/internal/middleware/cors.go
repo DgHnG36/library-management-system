@@ -17,43 +17,8 @@ type CORSMiddleware struct {
 	maxAge           time.Duration
 }
 
-func NewCORSMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHeaders []string, allowCredentials bool, maxAge time.Duration) *CORSMiddleware {
-	return &CORSMiddleware{
-		allowedOrigins:   allowedOrigins,
-		allowedMethods:   allowedMethods,
-		allowedHeaders:   allowedHeaders,
-		exposedHeaders:   exposedHeaders,
-		allowCredentials: allowCredentials,
-		maxAge:           maxAge,
-	}
-}
-
-func NewDefaultCORSMiddleware() *CORSMiddleware {
-	allowedOrigins := []string{"http://localhost:5173"} // Fix later after deploy to cloud server
-	allowedMethods := []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
-	allowedHeaders := []string{
-		"Authorization",
-		"Content-Type",
-		"X-Requested-With",
-		"accept",
-		"Accept",
-		"Content-Type",
-		"origin",
-		"Origin",
-	} //  Default headers
-	exposedHeaders := []string{"Authorization",
-		"X-Refresh-Token",
-		"X-New-Access-Token",
-		"X-New-Refresh-Token",
-		"X-Request-ID",
-		"X-User-ID",
-		"X-User-Role",
-		"X-Rate-Limit-Remaining",
-		"X-Rate-Limit-Limit"}
-	allowCredentials := true
-	maxAge := 12 * time.Hour
-
-	return NewCORSMiddleware(allowedOrigins, allowedMethods, allowedHeaders, exposedHeaders, allowCredentials, maxAge)
+func NewCORSMiddleware(maxAge time.Duration) *CORSMiddleware {
+	return newDefaultCORSMiddleware(maxAge)
 }
 
 func (m *CORSMiddleware) Handle() gin.HandlerFunc {
@@ -82,6 +47,44 @@ func (m *CORSMiddleware) Handle() gin.HandlerFunc {
 		}
 
 		c.Next()
+	}
+}
+
+func newDefaultCORSMiddleware(maxAge time.Duration) *CORSMiddleware {
+	allowedOrigins := []string{"http://localhost:5173"} // Fix later after deploy to cloud server
+	allowedMethods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
+	allowedHeaders := []string{
+		"Authorization",
+		"Content-Type",
+		"X-Requested-With",
+		"accept",
+		"Accept",
+		"Content-Type",
+		"origin",
+		"Origin",
+	} //  Default headers
+	exposedHeaders := []string{"Authorization",
+		"X-Refresh-Token",
+		"X-New-Access-Token",
+		"X-New-Refresh-Token",
+		"X-Request-ID",
+		"X-User-ID",
+		"X-User-Role",
+		"X-Rate-Limit-Remaining",
+		"X-Rate-Limit-Limit",
+	}
+	allowCredentials := true
+	if maxAge <= 0 {
+		maxAge = 12 * time.Hour // Default max age for preflight requests
+	}
+
+	return &CORSMiddleware{
+		allowedOrigins:   allowedOrigins,
+		allowedMethods:   allowedMethods,
+		allowedHeaders:   allowedHeaders,
+		exposedHeaders:   exposedHeaders,
+		allowCredentials: allowCredentials,
+		maxAge:           maxAge,
 	}
 }
 

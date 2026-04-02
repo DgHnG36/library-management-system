@@ -26,6 +26,11 @@ func NewBookService(bookRepo repository.BookRepository, logger *logger.Logger) *
 }
 
 func (s *BookService) GetBook(ctx context.Context, id, title string) (*models.Book, error) {
+	s.logger.Info("Getting book", logger.Fields{
+		"id":    id,
+		"title": title,
+	})
+
 	var (
 		book *models.Book
 		err  error
@@ -36,14 +41,14 @@ func (s *BookService) GetBook(ctx context.Context, id, title string) (*models.Bo
 	} else if title != "" {
 		book, err = s.bookRepo.FindByTitle(ctx, title)
 	} else {
-		return nil, status.Errorf(codes.InvalidArgument, "id or title is required")
+		return nil, status.Error(codes.InvalidArgument, "ID or Title is required")
 	}
 
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get book: %v", err)
+		return nil, status.Error(codes.Internal, "failed to get book")
 	}
 	if book == nil {
-		return nil, status.Errorf(codes.NotFound, "book not found")
+		return nil, status.Error(codes.NotFound, "book not found")
 	}
 
 	return book, nil
@@ -59,7 +64,7 @@ func (s *BookService) ListBooks(ctx context.Context, page, limit int32, sortBy s
 
 	books, total, err := s.bookRepo.List(ctx, page, limit, sortBy, isDesc, searchQuery, category)
 	if err != nil {
-		return nil, 0, status.Errorf(codes.Internal, "failed to list books: %v", err)
+		return nil, 0, status.Error(codes.Internal, "failed to list books")
 	}
 
 	return books, total, nil
@@ -86,10 +91,12 @@ func (s *BookService) CreateBooks(ctx context.Context, payloads []CreateBookPayl
 	}
 
 	if err := s.bookRepo.Create(ctx, books); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create books: %v", err)
+		return nil, status.Error(codes.Internal, "failed to create books")
 	}
 
-	s.logger.Info("Books created", logger.Fields{"count": len(books)})
+	s.logger.Info("Books created", logger.Fields{
+		"count": len(books),
+	})
 	return books, nil
 }
 
@@ -98,10 +105,10 @@ func (s *BookService) UpdateBook(ctx context.Context, id, title, author, isbn, c
 
 	book, err := s.bookRepo.FindByID(ctx, id)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to find book: %v", err)
+		return nil, status.Error(codes.Internal, "failed to find book")
 	}
 	if book == nil {
-		return nil, status.Errorf(codes.NotFound, "book %s not found", id)
+		return nil, status.Error(codes.NotFound, "book not found")
 	}
 
 	if title != "" {
@@ -121,35 +128,54 @@ func (s *BookService) UpdateBook(ctx context.Context, id, title, author, isbn, c
 	}
 
 	if err := s.bookRepo.Update(ctx, book); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to update book: %v", err)
+		return nil, status.Error(codes.Internal, "failed to update book")
 	}
+
+	s.logger.Info("Book updated", logger.Fields{
+		"book_id": id,
+	})
 
 	return book, nil
 }
 
 func (s *BookService) DeleteBooks(ctx context.Context, ids []string) error {
-	s.logger.Info("Deleting books", logger.Fields{"ids": ids})
+	s.logger.Info("Deleting books", logger.Fields{
+		"ids": ids,
+	})
 
 	if err := s.bookRepo.Delete(ctx, ids); err != nil {
-		return status.Errorf(codes.Internal, "failed to delete books: %v", err)
+		return status.Error(codes.Internal, "failed to delete books")
 	}
+
+	s.logger.Info("Books deleted", logger.Fields{
+		"ids": ids,
+	})
 	return nil
 }
 
 func (s *BookService) CheckAvailability(ctx context.Context, bookID string) (bool, int32, error) {
+	s.logger.Debug("Checking book availability", logger.Fields{
+		"book_id": bookID,
+	})
+
 	book, err := s.bookRepo.FindByID(ctx, bookID)
 	if err != nil {
-		return false, 0, status.Errorf(codes.Internal, "failed to find book: %v", err)
+		return false, 0, status.Error(codes.Internal, "failed to find book")
 	}
 	if book == nil {
-		return false, 0, status.Errorf(codes.NotFound, "book %s not found", bookID)
+		return false, 0, status.Error(codes.NotFound, "book not found")
 	}
+
+	s.logger.Debug("Book availability", logger.Fields{
+		"book_id":            bookID,
+		"available_quantity": book.AvailableQuantity,
+	})
 
 	return book.AvailableQuantity > 0, book.AvailableQuantity, nil
 }
 
 func (s *BookService) UpdateBookQuantity(ctx context.Context, bookID string, changeAmount int32) (int32, error) {
-	s.logger.Info("Updating book quantity", logger.Fields{
+	s.logger.Debug("Updating book quantity", logger.Fields{
 		"book_id":       bookID,
 		"change_amount": changeAmount,
 	})
@@ -157,10 +183,15 @@ func (s *BookService) UpdateBookQuantity(ctx context.Context, bookID string, cha
 	newQty, err := s.bookRepo.UpdateAvailableQuantity(ctx, bookID, changeAmount)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return 0, status.Errorf(codes.NotFound, "book %s not found", bookID)
+			return 0, status.Error(codes.NotFound, "book not found")
 		}
-		return 0, status.Errorf(codes.Internal, "failed to update book quantity: %v", err)
+		return 0, status.Error(codes.Internal, "failed to update book quantity")
 	}
+
+	s.logger.Debug("Book quantity updated", logger.Fields{
+		"book_id":      bookID,
+		"new_quantity": newQty,
+	})
 
 	return newQty, nil
 }
