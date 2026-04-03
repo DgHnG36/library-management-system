@@ -143,15 +143,18 @@ func (m *Mapper) MapPbListUsersRequest(req *user_service_dto.ListUsersRequestDTO
 		return &userv1.ListUsersRequest{}
 	}
 
-	return &userv1.ListUsersRequest{
-		Pagination: &commonv1.PaginationRequest{
+	pbReq := &userv1.ListUsersRequest{
+		Role: m.toPbRole(req.RoleFilter),
+	}
+	if req.Pagination != nil {
+		pbReq.Pagination = &commonv1.PaginationRequest{
 			Page:   req.Pagination.Page,
 			Limit:  req.Pagination.Limit,
 			SortBy: req.Pagination.SortBy,
 			IsDesc: req.Pagination.IsDesc,
-		},
-		Role: m.toPbRole(req.RoleFilter),
+		}
 	}
+	return pbReq
 }
 
 func (m *Mapper) MapPbDeleteUsersRequest(req *user_service_dto.DeleteUsersRequestDTO) *userv1.DeleteUsersRequest {
@@ -260,16 +263,21 @@ func (m *Mapper) MapPbListBooksRequest(req *book_service_dto.ListBooksRequestDTO
 		return &bookv1.ListBooksRequest{}
 	}
 
-	return &bookv1.ListBooksRequest{
-		Pagination: &commonv1.PaginationRequest{
+	pbReq := &bookv1.ListBooksRequest{
+		SearchQuery: req.SearchQuery,
+		Category:    req.Category,
+	}
+
+	if req.Pagination != nil {
+		pbReq.Pagination = &commonv1.PaginationRequest{
 			Page:   req.Pagination.Page,
 			Limit:  req.Pagination.Limit,
 			SortBy: req.Pagination.SortBy,
 			IsDesc: req.Pagination.IsDesc,
-		},
-		SearchQuery: req.SearchQuery,
-		Category:    req.Category,
+		}
 	}
+
+	return pbReq
 }
 
 func (m *Mapper) MapPbCreateBooksRequest(req *book_service_dto.CreateBooksRequestDTO) *bookv1.CreateBooksRequest {
@@ -441,16 +449,19 @@ func (m *Mapper) MapPbListMyOrdersRequest(req *order_service_dto.ListMyOrdersReq
 		return &orderv1.ListMyOrdersRequest{}
 	}
 
-	return &orderv1.ListMyOrdersRequest{
-		Pagination: &commonv1.PaginationRequest{
+	pbReq := &orderv1.ListMyOrdersRequest{
+		UserId:       req.UserID,
+		FilterStatus: m.toPbOrderStatus(req.FilterStatus),
+	}
+	if req.Pagination != nil {
+		pbReq.Pagination = &commonv1.PaginationRequest{
 			Page:   req.Pagination.Page,
 			Limit:  req.Pagination.Limit,
 			SortBy: req.Pagination.SortBy,
 			IsDesc: req.Pagination.IsDesc,
-		},
-		UserId:       req.UserID,
-		FilterStatus: m.toPbOrderStatus(req.FilterStatus),
+		}
 	}
+	return pbReq
 }
 
 func (m *Mapper) MapPbCancelOrderRequest(req *order_service_dto.CancelOrderRequestDTO) *orderv1.CancelOrderRequest {
@@ -470,16 +481,19 @@ func (m *Mapper) MapPbListAllOrdersRequest(req *order_service_dto.ListAllOrdersR
 		return &orderv1.ListAllOrdersRequest{}
 	}
 
-	return &orderv1.ListAllOrdersRequest{
-		Pagination: &commonv1.PaginationRequest{
+	pbReq := &orderv1.ListAllOrdersRequest{
+		FilterStatus: m.toPbOrderStatus(req.FilterStatus),
+		SearchUserId: req.SearchUserID,
+	}
+	if req.Pagination != nil {
+		pbReq.Pagination = &commonv1.PaginationRequest{
 			Page:   req.Pagination.Page,
 			Limit:  req.Pagination.Limit,
 			SortBy: req.Pagination.SortBy,
 			IsDesc: req.Pagination.IsDesc,
-		},
-		FilterStatus: m.toPbOrderStatus(req.FilterStatus),
-		SearchUserId: req.SearchUserID,
+		}
 	}
+	return pbReq
 }
 
 func (m *Mapper) MapPbUpdateOrderStatusRequest(req *order_service_dto.UpdateOrderStatusRequestDTO) *orderv1.UpdateOrderStatusRequest {

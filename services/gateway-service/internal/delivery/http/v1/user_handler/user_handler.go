@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/metadata"
 )
 
 type UserClientInterface interface {
@@ -189,8 +190,12 @@ func (h *UserHandler) UpdateVIPAccount(c *gin.Context) {
 		return
 	}
 
+	ctx := metadata.AppendToOutgoingContext(c.Request.Context(),
+		"x-user-role", c.GetString("X-User-Role"),
+		"x-user-id", c.GetString("X-User-ID"),
+	)
 	grpcReq := h.mapper.MapPbUpdateVIPAccountRequest(&req)
-	resp, err := h.userServiceClient.UpdateVIPAccount(c.Request.Context(), grpcReq)
+	resp, err := h.userServiceClient.UpdateVIPAccount(ctx, grpcReq)
 	if err != nil {
 		h.logger.Error("Failed to update VIP account", err, logger.Fields{
 			"user_id": req.UserID,
@@ -215,12 +220,15 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 		return
 	}
 
+	ctx := metadata.AppendToOutgoingContext(c.Request.Context(),
+		"x-user-role", c.GetString("X-User-Role"),
+		"x-user-id", c.GetString("X-User-ID"),
+	)
 	grpcReq := h.mapper.MapPbListUsersRequest(&req)
-	resp, err := h.userServiceClient.ListUsers(c.Request.Context(), grpcReq)
+	resp, err := h.userServiceClient.ListUsers(ctx, grpcReq)
 	if err != nil {
 		h.logger.Error("Failed to list users", err, logger.Fields{
 			"role_filter": req.RoleFilter,
-			"page":        req.Pagination.Page,
 		})
 		appErr := pkgerrors.FromGRPCError(err)
 		c.JSON(int(appErr.HTTPStatus), appErr)
@@ -241,8 +249,12 @@ func (h *UserHandler) DeleteUsers(c *gin.Context) {
 		return
 	}
 
+	ctx := metadata.AppendToOutgoingContext(c.Request.Context(),
+		"x-user-role", c.GetString("X-User-Role"),
+		"x-user-id", c.GetString("X-User-ID"),
+	)
 	grpcReq := h.mapper.MapPbDeleteUsersRequest(&req)
-	err := h.userServiceClient.DeleteUsers(c.Request.Context(), grpcReq)
+	err := h.userServiceClient.DeleteUsers(ctx, grpcReq)
 	if err != nil {
 		h.logger.Error("Failed to delete users", err, logger.Fields{
 			"user_ids": req.UserIDs,

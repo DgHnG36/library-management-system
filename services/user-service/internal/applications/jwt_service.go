@@ -2,6 +2,7 @@ package applications
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"time"
 
 	"github.com/DgHnG36/lib-management-system/services/user-service/internal/models"
@@ -88,7 +89,7 @@ func (s *JWTService) generateAccessToken(user *models.User) (string, error) {
 func (s *JWTService) HashRefreshToken(token string) string {
 	h := sha256.New()
 	h.Write([]byte(token))
-	return string(h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func (s *JWTService) ValidateAccessToken(tokenStr string) (*JWTClaims, error) {

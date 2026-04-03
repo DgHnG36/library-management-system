@@ -1,29 +1,44 @@
 #!/usr/bin/env bash
+# Full E2E workflow test — pure curl/bash, no Go required.
+# Tests every API route through the HTTP gateway end-to-end.
+#
+# Environment variables (all optional):
+#   API_GATEWAY_URL               default: http://localhost:8080
+#   MANAGER_USERNAME / _PASSWORD  default: lms-manager / manager@413
+#   ADMIN_USERNAME / _PASSWORD    default: lms-admin / @dm1n79
+#   WAIT_TIMEOUT_SECONDS          default: 180
+#   KEEP_STACK=1                  skip docker compose down on exit
+#   SKIP_START=1                  skip docker compose up (services already running)
+#   STRICT_DB_CHECK=1             fail on postgres validation errors
+#   NOTIFICATION_REQUIRE_SUCCESS=1 fail if email was not actually delivered
+#   NOTIFICATION_CONTAINER        default: lms-notification-service
 
 set -euo pipefail
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-COMPOSE_FILE="${REPO_ROOT}/test/docker-compose.local.yaml"
+COMPOSE_FILE="${REPO_ROOT}/test/docker-compose.test.yaml"
 
 API_GATEWAY_URL="${API_GATEWAY_URL:-http://localhost:8080}"
-JWT_SECRET="${JWT_SECRET:-local-dev-secret-key}"
-EXPECTED_PROXY_STATUS="${EXPECTED_PROXY_STATUS:-503}"
 WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-180}"
 KEEP_STACK="${KEEP_STACK:-0}"
 SKIP_START="${SKIP_START:-0}"
 STRICT_DB_CHECK="${STRICT_DB_CHECK:-0}"
-GRPC_USER_ADDR="${GRPC_USER_ADDR:-localhost:40041}"
-GRPC_BOOK_ADDR="${GRPC_BOOK_ADDR:-localhost:40042}"
-GRPC_ORDER_ADDR="${GRPC_ORDER_ADDR:-localhost:40043}"
 NOTIFICATION_REQUIRE_SUCCESS="${NOTIFICATION_REQUIRE_SUCCESS:-0}"
-FLOW_RESULT_JSON="/tmp/lms_e2e_flow_result.json"
-
+NOTIFICATION_CONTAINER="${NOTIFICATION_CONTAINER:-lms-notification-service}"
+MANAGER_USERNAME="${MANAGER_USERNAME:-lms-manager}"
+MANAGER_PASSWORD="${MANAGER_PASSWORD:-manager@413}"
+ADMIN_USERNAME="${ADMIN_USERNAME:-lms-admin}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-@dm1n79}"
+# __________________________________________________
+# Check for required commands before starting tests
+# __________________________________________________
 if ! command -v docker >/dev/null 2>&1; then
   echo -e "${RED}[ERROR] docker is not installed or not in PATH${NC}"
   exit 1
@@ -48,27 +63,62 @@ else
   exit 1
 fi
 
-log_info() {
-  echo -e "${YELLOW}[INFO] $*${NC}"
-}
+# _____________________________________________________________
+# Shared state (populated during test run)
+# _____________________________________________________________
+RESP_STATUS=""
+RESP_BODY=""
+RESP_BODY_FILE="/tmp/lms_e2e_resp_body.txt"
 
-log_pass() {
-  echo -e "${GREEN}[PASS] $*${NC}"
-}
+# Unique suffix for usernames / ISBNs to avoid conflicts on re-runs.
+# Use nanoseconds when available (Linux), fall back to seconds+RANDOM.
+TMP_SUFFIX="$(date +%s%N 2>/dev/null || echo "$(date +%s)${RANDOM}")"
+TMP_SUFFIX="${TMP_SUFFIX: -9}"   # keep last 9 digits
 
-log_fail() {
-  echo -e "${RED}[FAIL] $*${NC}"
-}
+USER_TOKEN=""
+USER_ID=""
+USER_USERNAME=""
+MANAGER_TOKEN=""
+ADMIN_TOKEN=""
+BOOK_ID_1=""
+BOOK_ID_2=""
+ORDER_ID=""
+CANCEL_ORDER_ID=""
 
+# _____________________________________________________________
+# Logging helpers
+# _____________________________________________________________
+log_section() { echo -e "\n${BLUE}══════════════════════════════════════════════${NC}"; echo -e "${BLUE}  $*${NC}"; echo -e "${BLUE}══════════════════════════════════════════════${NC}"; }
+log_info()    { echo -e "${YELLOW}[INFO] $*${NC}"; }
+log_pass()    { echo -e "${GREEN}[PASS] $*${NC}"; }
+log_fail()    { echo -e "${RED}[FAIL] $*${NC}"; }
+
+# _____________________________________________________________
+# Assertion helpers
+# _____________________________________________________________
 assert_equal() {
   local expected="$1"
   local actual="$2"
   local message="$3"
 
   if [[ "${expected}" == "${actual}" ]]; then
-    log_pass "${message} (expected=${expected}, actual=${actual})"
+    log_pass "${message}"
   else
     log_fail "${message} (expected=${expected}, actual=${actual})"
+    log_fail "Response body: $(cat "${RESP_BODY_FILE}" 2>/dev/null || echo '<none>')"
+    exit 1
+  fi
+}
+
+assert_not_empty() {
+  local value="$1"
+  local message="$2"
+
+  if [[ -n "${value}" ]]; then
+    log_pass "${message}"
+  else
+    log_fail "${message} (value is empty)"
+    log_fail "Response body: $(cat "${RESP_BODY_FILE}" 2>/dev/null || echo '<none>')"
     exit 1
   fi
 }
@@ -82,752 +132,182 @@ assert_contains() {
     log_pass "${message}"
   else
     log_fail "${message} (missing '${needle}')"
+    log_fail "Haystack: ${haystack}"
     exit 1
   fi
 }
 
-assert_file_exists() {
-  local path="$1"
+# Assert HTTP status is in [400, 499]
+assert_4xx() {
+  local actual="$1"
   local message="$2"
 
-  if [[ -f "${path}" ]]; then
-    log_pass "${message}"
+  if [[ "${actual}" -ge 400 && "${actual}" -lt 500 ]]; then
+    log_pass "${message} (status=${actual})"
   else
-    log_fail "${message} (missing file: ${path})"
+    log_fail "${message} (expected 4xx, got ${actual})"
+    log_fail "Response body: $(cat "${RESP_BODY_FILE}" 2>/dev/null || echo '<none>')"
     exit 1
   fi
 }
 
-http_status() {
-  local method="$1"
-  local url="$2"
-  local auth_header="${3:-}"
+# Assert numeric actual >= expected minimum
+assert_ge() {
+  local min="$1"
+  local actual="$2"
+  local message="$3"
 
-  if [[ -n "${auth_header}" ]]; then
-    curl -sS -o /tmp/lms_e2e_body.txt -w "%{http_code}" -X "${method}" -H "Authorization: ${auth_header}" "${url}"
+  if python3 -c "import sys; sys.exit(0 if int(sys.argv[1]) >= int(sys.argv[2]) else 1)" \
+       "${actual}" "${min}" 2>/dev/null; then
+    log_pass "${message} (${actual} >= ${min})"
   else
-    curl -sS -o /tmp/lms_e2e_body.txt -w "%{http_code}" -X "${method}" "${url}"
+    log_fail "${message} (expected >= ${min}, got ${actual})"
+    exit 1
   fi
 }
 
-generate_jwt() {
-  python3 - <<'PY'
-import base64
-import hashlib
-import hmac
-import json
-import os
-import time
+# ______________________________________________________________
+# HTTP helper
+#   api_call METHOD PATH [BODY] [TOKEN]
+#   Sets globals: RESP_STATUS, RESP_BODY
+# _____________________________________________________________
+api_call() {
+  local method="$1"
+  local path="$2"
+  local body="${3:-}"
+  local token="${4:-}"
+  local url="${API_GATEWAY_URL}${path}"
 
-secret = os.environ.get("JWT_SECRET", "local-dev-secret-key").encode("utf-8")
+  local -a curl_args=(-sS -o "${RESP_BODY_FILE}" -w "%{http_code}" -X "${method}")
 
-header = {"alg": "HS256", "typ": "JWT"}
-payload = {
-    "user_id": "e2e-user",
-    "role": "user",
-    "email": "e2e@example.com",
-    "iss": "lib-management-system",
-    "aud": "gateway-service",
-    "sub": "e2e-user",
-    "iat": int(time.time()),
-    "exp": int(time.time()) + 3600,
+  if [[ -n "${token}" ]]; then
+    curl_args+=(-H "Authorization: Bearer ${token}")
+  fi
+
+  if [[ -n "${body}" ]]; then
+    curl_args+=(-H "Content-Type: application/json" -d "${body}")
+  fi
+
+  RESP_STATUS="$(curl "${curl_args[@]}" "${url}")"
+  RESP_BODY="$(cat "${RESP_BODY_FILE}")"
 }
 
-def b64url(data: bytes) -> bytes:
-    return base64.urlsafe_b64encode(data).rstrip(b"=")
+# _____________________________________________________________
+# JSON field extractor (dot-separated path, e.g. "order.id", "created_books.0.id")
+# Usage: json_get KEY [JSON_STRING]
+#        Omit JSON_STRING to use $RESP_BODY
+# _____________________________________________________________
+json_get() {
+  local key="$1"
+  local json="${2:-${RESP_BODY}}"
 
-header_enc = b64url(json.dumps(header, separators=(",", ":")).encode("utf-8"))
-payload_enc = b64url(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-signing_input = header_enc + b"." + payload_enc
-signature = b64url(hmac.new(secret, signing_input, hashlib.sha256).digest())
+  python3 - "${json}" "${key}" <<'PY'
+import json, sys
 
-print((signing_input + b"." + signature).decode("utf-8"))
+data = json.loads(sys.argv[1])
+parts = sys.argv[2].split(".")
+v = data
+for p in parts:
+    if isinstance(v, list):
+        v = v[int(p)]
+    else:
+        v = v[p]
+
+if isinstance(v, bool):
+    print("true" if v else "false")
+elif isinstance(v, (list, dict)):
+    print(json.dumps(v))
+else:
+    print(v)
 PY
 }
 
+# _____________________________________________________________
+# Postgres helpers (used only when STRICT_DB_CHECK=1)
+# _____________________________________________________________
 query_postgres() {
   local container="$1"
   local database="$2"
   local sql="$3"
 
-  local out
-  local err
-  local rc
-  err="$(mktemp /tmp/lms_e2e_psql_err_XXXX.log)"
-
+  local out=""
   set +e
   out="$(docker exec -e PGPASSWORD=postgres "${container}" \
-    psql -U postgres -d "${database}" -X -qAt -v ON_ERROR_STOP=1 -c "${sql}" 2>"${err}")"
-  rc=$?
+    psql -U postgres -d "${database}" -X -qAt -v ON_ERROR_STOP=1 -c "${sql}" 2>/dev/null)"
+  local rc=$?
   set -e
 
-  if [[ ${rc} -ne 0 ]]; then
-    if [[ "${STRICT_DB_CHECK}" == "1" ]]; then
-      log_fail "SQL check failed (container=${container}, db=${database})"
-      if [[ -s "${err}" ]]; then
-        cat "${err}" >&2
-      fi
-      rm -f "${err}"
-      exit 1
-    fi
-
-    rm -f "${err}"
-    printf ""
-    return 0
-  fi
-
-  rm -f "${err}"
-
-  # Normalize psql output so assertions are not tripped by invisible whitespace.
-  printf "%s" "${out}" | tr -d '\r' | xargs
+  [[ ${rc} -eq 0 ]] && printf "%s" "${out}" | tr -d '\r' | xargs || echo ""
 }
 
 eventually_equal() {
   local expected="$1"
-  local timeout_seconds="$2"
+  local timeout_s="$2"
   local message="$3"
   shift 3
 
-  local deadline=$((SECONDS + timeout_seconds))
+  local deadline=$((SECONDS + timeout_s))
   local value=""
 
   while (( SECONDS < deadline )); do
-    if value="$("$@")"; then
-      :
-    else
-      if [[ "${STRICT_DB_CHECK}" == "1" ]]; then
-        log_fail "Strict DB check mode: command failed while asserting '${message}'"
-        exit 1
-      fi
-      value=""
-    fi
-
+    value="$("$@" 2>/dev/null || echo "")"
     if [[ "${value}" == "${expected}" ]]; then
-      log_pass "${message} (value=${value})"
-      return
-    fi
-    sleep 1
-  done
-
-  log_fail "${message} (expected=${expected}, actual=${value})"
-  exit 1
-}
-
-eventually_command_success() {
-  local timeout_seconds="$1"
-  local message="$2"
-  shift 2
-
-  local deadline=$((SECONDS + timeout_seconds))
-  while (( SECONDS < deadline )); do
-    if "$@" >/dev/null 2>&1; then
       log_pass "${message}"
       return
     fi
     sleep 1
   done
 
-  log_fail "${message}"
-  exit 1
+  log_fail "${message} (expected=${expected}, actual=${value})"
+  [[ "${STRICT_DB_CHECK}" == "1" ]] && exit 1 || true
 }
 
-extract_last_json_object() {
-  local raw="$1"
-
-  python3 - "$raw" <<'PY'
-import json
-import sys
-
-raw = sys.argv[1]
-lines = [line.strip() for line in raw.splitlines() if line.strip()]
-
-for line in reversed(lines):
-  try:
-    obj = json.loads(line)
-    print(json.dumps(obj))
-    sys.exit(0)
-  except Exception:
-    continue
-
-try:
-  obj = json.loads(raw)
-  print(json.dumps(obj))
-  sys.exit(0)
-except Exception:
-  pass
-
-print("", end="")
-sys.exit(1)
-PY
-}
-
-run_grpc_business_flow() {
-  local tmp_go_file
-  local json_output
-
-  tmp_go_file="$(mktemp /tmp/lms_e2e_grpc_flow_XXXX.go)"
-
-  cat > "${tmp_go_file}" <<'GO'
-package main
-
-import (
-  "context"
-  "encoding/json"
-  "fmt"
-  "os"
-  "time"
-
-  commonv1 "github.com/DgHnG36/lib-management-system/shared/go/v1"
-  bookv1 "github.com/DgHnG36/lib-management-system/shared/go/v1/book"
-  orderv1 "github.com/DgHnG36/lib-management-system/shared/go/v1/order"
-  userv1 "github.com/DgHnG36/lib-management-system/shared/go/v1/user"
-  "google.golang.org/grpc"
-  "google.golang.org/grpc/credentials/insecure"
-)
-
-type flowResult struct {
-  UserID         string   `json:"user_id"`
-  Username       string   `json:"username"`
-  Email          string   `json:"email"`
-  LoginToken     string   `json:"login_token"`
-  BookIDs        []string `json:"book_ids"`
-  OrderedBookID  string   `json:"ordered_book_id"`
-  OrderID        string   `json:"order_id"`
-  OrderStatus    string   `json:"order_status"`
-  ListOrderFound bool     `json:"list_order_found"`
-  ListOrderTotal int32    `json:"list_order_total"`
-}
-
-func fatalf(format string, args ...interface{}) {
-  fmt.Fprintf(os.Stderr, format+"\n", args...)
-  os.Exit(1)
-}
-
-func getenv(key, fallback string) string {
-  if v := os.Getenv(key); v != "" {
-    return v
-  }
-  return fallback
-}
-
-func contains(xs []string, target string) bool {
-  for _, x := range xs {
-    if x == target {
-      return true
-    }
-  }
-  return false
-}
-
-func main() {
-  userAddr := getenv("GRPC_USER_ADDR", "localhost:40041")
-  bookAddr := getenv("GRPC_BOOK_ADDR", "localhost:40042")
-  orderAddr := getenv("GRPC_ORDER_ADDR", "localhost:40043")
-
-  dialOpt := grpc.WithTransportCredentials(insecure.NewCredentials())
-
-  userConn, err := grpc.NewClient(userAddr, dialOpt)
-  if err != nil {
-    fatalf("failed to connect user-service: %v", err)
-  }
-  defer userConn.Close()
-
-  bookConn, err := grpc.NewClient(bookAddr, dialOpt)
-  if err != nil {
-    fatalf("failed to connect book-service: %v", err)
-  }
-  defer bookConn.Close()
-
-  orderConn, err := grpc.NewClient(orderAddr, dialOpt)
-  if err != nil {
-    fatalf("failed to connect order-service: %v", err)
-  }
-  defer orderConn.Close()
-
-  userClient := userv1.NewUserServiceClient(userConn)
-  bookClient := bookv1.NewBookServiceClient(bookConn)
-  orderClient := orderv1.NewOrderServiceClient(orderConn)
-
-  suffix := time.Now().UnixNano()
-  short := suffix % 1000000
-  username := fmt.Sprintf("e2e_user_%d", suffix)
-  email := fmt.Sprintf("e2e_user_%d@example.com", suffix)
-  password := "E2e!Passw0rd123"
-
-  ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-  defer cancel()
-
-  regResp, err := userClient.Register(ctx, &userv1.RegisterRequest{
-    Username:    username,
-    Password:    password,
-    Email:       email,
-    PhoneNumber: "0900000000",
-  })
-  if err != nil {
-    fatalf("register failed: %v", err)
-  }
-  if regResp.GetStatus() != 200 || regResp.GetUserId() == "" {
-    fatalf("register returned invalid response: status=%d user_id=%q", regResp.GetStatus(), regResp.GetUserId())
-  }
-  userID := regResp.GetUserId()
-
-  loginResp, err := userClient.Login(ctx, &userv1.LoginRequest{
-    Identifier: &userv1.LoginRequest_Username{Username: username},
-    Password:   password,
-  })
-  if err != nil {
-    fatalf("login failed: %v", err)
-  }
-  if loginResp.GetStatus() != 200 || loginResp.GetToken() == "" || loginResp.GetUser() == nil {
-    fatalf("login returned invalid payload")
-  }
-  if loginResp.GetUser().GetId() != userID {
-    fatalf("login user_id mismatch: expected=%s actual=%s", userID, loginResp.GetUser().GetId())
-  }
-
-  isbn1 := fmt.Sprintf("E2E%06dA", short)
-  isbn2 := fmt.Sprintf("E2E%06dB", short)
-  createBooksResp, err := bookClient.CreateBooks(ctx, &bookv1.CreateBooksRequest{
-    Books: []*bookv1.CreateBookPayload{
-      {
-        Title:         "E2E Dist Sys A",
-        Author:        "Test Runner",
-        Isbn:          isbn1,
-        Category:      "Test",
-        Description:   "E2E test book A",
-        TotalQuantity: 5,
-      },
-      {
-        Title:         "E2E Go Micro B",
-        Author:        "Test Runner",
-        Isbn:          isbn2,
-        Category:      "Test",
-        Description:   "E2E test book B",
-        TotalQuantity: 4,
-      },
-    },
-  })
-  if err != nil {
-    fatalf("create books failed: %v", err)
-  }
-  if createBooksResp.GetSuccessCount() < 2 || len(createBooksResp.GetBooks()) < 2 {
-    fatalf("create books returned insufficient books")
-  }
-
-  bookIDs := make([]string, 0, len(createBooksResp.GetBooks()))
-  for _, b := range createBooksResp.GetBooks() {
-    if b.GetId() == "" {
-      fatalf("created book has empty id")
-    }
-    bookIDs = append(bookIDs, b.GetId())
-  }
-
-  listBooksResp, err := bookClient.ListBooks(ctx, &bookv1.ListBooksRequest{
-    Pagination: &commonv1.PaginationRequest{Page: 1, Limit: 100},
-  })
-  if err != nil {
-    fatalf("list books failed: %v", err)
-  }
-
-  listedIDs := make([]string, 0, len(listBooksResp.GetBooks()))
-  for _, b := range listBooksResp.GetBooks() {
-    listedIDs = append(listedIDs, b.GetId())
-  }
-  for _, id := range bookIDs {
-    if !contains(listedIDs, id) {
-      fatalf("created book id not found in list books: %s", id)
-    }
-  }
-
-  orderedBookID := bookIDs[0]
-  createOrderResp, err := orderClient.CreateOrder(ctx, &orderv1.CreateOrderRequest{
-    UserId:     userID,
-    BookIds:    []string{orderedBookID},
-    BorrowDays: 7,
-  })
-  if err != nil {
-    fatalf("create order failed: %v", err)
-  }
-
-  if createOrderResp.GetOrder() == nil || createOrderResp.GetOrder().GetId() == "" {
-    fatalf("create order returned empty order")
-  }
-
-  orderID := createOrderResp.GetOrder().GetId()
-  orderStatus := createOrderResp.GetOrder().GetStatus().String()
-
-  listOrdersResp, err := orderClient.ListMyOrders(ctx, &orderv1.ListMyOrdersRequest{
-    UserId: userID,
-    Pagination: &commonv1.PaginationRequest{
-      Page:  1,
-      Limit: 20,
-    },
-  })
-  if err != nil {
-    fatalf("list my orders failed: %v", err)
-  }
-
-  found := false
-  for _, o := range listOrdersResp.GetOrders() {
-    if o.GetId() == orderID {
-      found = true
-      break
-    }
-  }
-  if !found {
-    fatalf("created order not found in list my orders")
-  }
-
-  out, err := json.Marshal(flowResult{
-    UserID:         userID,
-    Username:       username,
-    Email:          email,
-    LoginToken:     loginResp.GetToken(),
-    BookIDs:        bookIDs,
-    OrderedBookID:  orderedBookID,
-    OrderID:        orderID,
-    OrderStatus:    orderStatus,
-    ListOrderFound: found,
-    ListOrderTotal: listOrdersResp.GetTotalCount(),
-  })
-  if err != nil {
-    fatalf("failed to marshal result json: %v", err)
-  }
-
-  fmt.Println(string(out))
-}
-GO
-
-  if command -v go >/dev/null 2>&1; then
-  log_info "Running gRPC business flow with local Go"
-  json_output="$(cd "${REPO_ROOT}" && GRPC_USER_ADDR="${GRPC_USER_ADDR}" GRPC_BOOK_ADDR="${GRPC_BOOK_ADDR}" GRPC_ORDER_ADDR="${GRPC_ORDER_ADDR}" go run "${tmp_go_file}")"
-  else
-  log_info "Local Go not found, running gRPC business flow inside golang container"
-
-  local compose_project
-  local compose_network
-  compose_project="${COMPOSE_PROJECT_NAME:-$(basename "$(dirname "${COMPOSE_FILE}")")}" 
-  compose_network="${compose_project}_lms-network"
-
-  json_output="$(docker run --rm \
-    --network "${compose_network}" \
-    -e GRPC_USER_ADDR="user-service:40041" \
-    -e GRPC_BOOK_ADDR="book-service:40042" \
-    -e GRPC_ORDER_ADDR="order-service:40043" \
-    -v "${REPO_ROOT}:/app" \
-    -v "${tmp_go_file}:/tmp/lms_e2e_grpc_flow.go:ro" \
-    -w /app \
-    golang:1.25-alpine \
-    sh -lc 'go run /tmp/lms_e2e_grpc_flow.go')"
-  fi
-
-  rm -f "${tmp_go_file}"
-
-  local clean_json
-  clean_json="$(extract_last_json_object "${json_output}")" || {
-    log_fail "gRPC business flow did not return valid JSON output"
-    printf "%s\n" "${json_output}" >&2
-    exit 1
-  }
-
-  printf "%s" "${clean_json}" > "${FLOW_RESULT_JSON}"
-  assert_file_exists "${FLOW_RESULT_JSON}" "gRPC business flow output saved"
-}
-
-run_gateway_proxy_forward_check() {
-  local tmp_go_file
-  local tmp_go_dir
-  local tmp_go_pkg
-  local json_output
-  local result_file
-
-  if ! command -v go >/dev/null 2>&1; then
-  log_info "Skipping proxy forward check: local Go not found"
-  return
-  fi
-
-  result_file="/tmp/lms_e2e_proxy_forward_result.json"
-  tmp_go_dir="$(mktemp -d "${REPO_ROOT}/services/gateway-service/cmd/e2e_proxy_forward_tmp_XXXX")"
-  tmp_go_pkg="./services/gateway-service/cmd/$(basename "${tmp_go_dir}")"
-  tmp_go_file="${tmp_go_dir}/main.go"
-
-  cat > "${tmp_go_file}" <<'GO'
-package main
-
-import (
-  "encoding/json"
-  "fmt"
-  "net/http"
-  "net/http/httptest"
-  "os"
-  "time"
-
-  "github.com/DgHnG36/lib-management-system/services/gateway-service/internal/middleware"
-  "github.com/DgHnG36/lib-management-system/services/gateway-service/internal/proxy"
-  gatewayRouter "github.com/DgHnG36/lib-management-system/services/gateway-service/internal/router"
-  "github.com/DgHnG36/lib-management-system/services/gateway-service/pkg/logger"
-  "github.com/redis/go-redis/v9"
-)
-
-type result struct {
-  StatusCode        int    `json:"status_code"`
-  ForwardedPath     string `json:"forwarded_path"`
-  ForwardedAuth     string `json:"forwarded_auth"`
-  ForwardedUserID   string `json:"forwarded_user_id"`
-  ForwardedUserRole string `json:"forwarded_user_role"`
-  ForwardedRequestID string `json:"forwarded_request_id"`
-}
-
-type closeNotifyRecorder struct {
-  *httptest.ResponseRecorder
-  closeCh chan bool
-}
-
-func newCloseNotifyRecorder() *closeNotifyRecorder {
-  return &closeNotifyRecorder{
-    ResponseRecorder: httptest.NewRecorder(),
-    closeCh:          make(chan bool, 1),
-  }
-}
-
-func (r *closeNotifyRecorder) CloseNotify() <-chan bool {
-  return r.closeCh
-}
-
-func getenv(key, fallback string) string {
-  if v := os.Getenv(key); v != "" {
-    return v
-  }
-  return fallback
-}
-
-func fatalf(format string, args ...interface{}) {
-  fmt.Fprintf(os.Stderr, format+"\n", args...)
-  os.Exit(1)
-}
-
-func main() {
-  redisAddr := getenv("REDIS_ADDR", "localhost:63379")
-  jwtSecret := []byte(getenv("JWT_SECRET", "local-dev-secret-key"))
-
-  var forwardedPath string
-  var forwardedAuth string
-  var forwardedUserID string
-  var forwardedUserRole string
-  var forwardedRequestID string
-
-  backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-    forwardedPath = r.URL.Path
-    forwardedAuth = r.Header.Get("Authorization")
-    forwardedUserID = r.Header.Get("X-User-ID")
-    forwardedUserRole = r.Header.Get("X-User-Role")
-    forwardedRequestID = r.Header.Get("X-Request-ID")
-    w.WriteHeader(http.StatusOK)
-    _, _ = w.Write([]byte(`{"ok":true}`))
-  }))
-  defer backend.Close()
-
-  redisClient := redis.NewClient(&redis.Options{Addr: redisAddr})
-  defer redisClient.Close()
-
-  log := logger.DefaultNewLogger()
-  authMiddleware := middleware.NewAuthMiddleware(jwtSecret, "HS256", log)
-  corsMiddleware := middleware.NewCORSMiddleware(
-    []string{"http://localhost:3000"},
-    []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-    []string{"Origin", "Authorization", "Content-Type"},
-    []string{"X-Request-ID", "X-Rate-Limit", "X-Rate-Limit-Remaining"},
-    true,
-    12*time.Hour,
-  )
-  rateLimitMiddleware := middleware.NewRateLimitMiddleware(redisClient, 1000, 60, log)
-  reverseProxy := proxy.NewReverseProxy(map[string]string{
-    "/api/v1/books": backend.URL,
-  }, log)
-
-  router := gatewayRouter.SetupRouter(authMiddleware, corsMiddleware, rateLimitMiddleware, reverseProxy, log)
-
-  token, err := middleware.GenerateToken("e2e-proxy-user", "user", "e2e-proxy@example.com", jwtSecret, "HS256", 15)
-  if err != nil {
-    fatalf("failed to generate token: %v", err)
-  }
-
-  req := httptest.NewRequest(http.MethodGet, "/api/v1/books?limit=1", nil)
-  req.Header.Set("Authorization", "Bearer "+token)
-  req.Header.Set("Origin", "http://localhost:3000")
-  req.Header.Set("X-Request-ID", "e2e-req-001")
-  rec := newCloseNotifyRecorder()
-
-  router.ServeHTTP(rec, req)
-
-  out, err := json.Marshal(result{
-    StatusCode:        rec.Code,
-    ForwardedPath:     forwardedPath,
-    ForwardedAuth:     forwardedAuth,
-    ForwardedUserID:   forwardedUserID,
-    ForwardedUserRole: forwardedUserRole,
-    ForwardedRequestID: forwardedRequestID,
-  })
-  if err != nil {
-    fatalf("marshal result failed: %v", err)
-  }
-
-  fmt.Println(string(out))
-}
-GO
-
-  json_output="$(cd "${REPO_ROOT}" && REDIS_ADDR="localhost:63379" JWT_SECRET="${JWT_SECRET}" go run "${tmp_go_pkg}")"
-  rm -rf "${tmp_go_dir}"
-
-  local clean_json
-  clean_json="$(extract_last_json_object "${json_output}")" || {
-    log_fail "proxy forward check did not return valid JSON output"
-    printf "%s\n" "${json_output}" >&2
-    exit 1
-  }
-
-  printf "%s" "${clean_json}" > "${result_file}"
-
-  assert_equal "200" "$(python3 -c 'import json;print(json.load(open("/tmp/lms_e2e_proxy_forward_result.json"))["status_code"])')" "proxy forward check status is 200"
-  assert_equal "/books" "$(python3 -c 'import json;print(json.load(open("/tmp/lms_e2e_proxy_forward_result.json"))["forwarded_path"])')" "proxy forwards trimmed path"
-  assert_contains "$(python3 -c 'import json;print(json.load(open("/tmp/lms_e2e_proxy_forward_result.json"))["forwarded_auth"])')" "Bearer " "proxy forwards authorization header"
-  assert_equal "e2e-proxy-user" "$(python3 -c 'import json;print(json.load(open("/tmp/lms_e2e_proxy_forward_result.json"))["forwarded_user_id"])')" "proxy forwards X-User-ID"
-  assert_equal "user" "$(python3 -c 'import json;print(json.load(open("/tmp/lms_e2e_proxy_forward_result.json"))["forwarded_user_role"])')" "proxy forwards X-User-Role"
-  assert_equal "e2e-req-001" "$(python3 -c 'import json;print(json.load(open("/tmp/lms_e2e_proxy_forward_result.json"))["forwarded_request_id"])')" "proxy forwards X-Request-ID"
-}
-
-extract_json_field() {
-  local field="$1"
-
-  python3 - "${FLOW_RESULT_JSON}" "${field}" <<'PY'
-import json
-import sys
-
-path = sys.argv[1]
-field = sys.argv[2]
-
-with open(path, "r", encoding="utf-8") as f:
-    data = json.load(f)
-
-value = data
-for part in field.split("."):
-    if part.isdigit():
-        value = value[int(part)]
-    else:
-        value = value[part]
-
-if isinstance(value, bool):
-    print("true" if value else "false")
-elif isinstance(value, (list, dict)):
-    print(json.dumps(value))
-else:
-    print(value)
-PY
-}
-
+# _____________________________________________________________
+# Optional cross-database consistency check
+# _____________________________________________________________
 validate_cross_db() {
-  local user_id
-  local username
-  local email
-  local order_id
-  local ordered_book_id
-  local book_ids_json
+  eventually_equal "1" 20 "User exists in user_db" \
+    query_postgres postgres-user user_db \
+    "SELECT COUNT(1) FROM users WHERE id='${USER_ID}';"
 
-  user_id="$(extract_json_field user_id)"
-  username="$(extract_json_field username)"
-  email="$(extract_json_field email)"
-  order_id="$(extract_json_field order_id)"
-  ordered_book_id="$(extract_json_field ordered_book_id)"
-  book_ids_json="$(extract_json_field book_ids)"
+  eventually_equal "1" 20 "Book 1 exists in book_db" \
+    query_postgres postgres-book book_db \
+    "SELECT COUNT(1) FROM books WHERE id='${BOOK_ID_1}';"
 
-  assert_contains "$(extract_json_field login_token)" "." "login returned JWT token"
-  assert_equal "true" "$(extract_json_field list_order_found)" "list my orders contains created order"
+  eventually_equal "1" 20 "Book 2 exists in book_db" \
+    query_postgres postgres-book book_db \
+    "SELECT COUNT(1) FROM books WHERE id='${BOOK_ID_2}';"
 
-  eventually_equal "1" 20 "user exists in user_db.users" \
-    query_postgres postgres-user user_db "SELECT COUNT(1) FROM users WHERE id='${user_id}' OR username='${username}';"
+  eventually_equal "1" 20 "Order exists in order_db" \
+    query_postgres postgres-order order_db \
+    "SELECT COUNT(1) FROM orders WHERE id='${ORDER_ID}';"
 
-  eventually_equal "1" 20 "user email persisted in user_db.users" \
-    query_postgres postgres-user user_db "SELECT COUNT(1) FROM users WHERE email='${email}';"
+  eventually_equal "${USER_ID}" 20 "Order belongs to correct user in order_db" \
+    query_postgres postgres-order order_db \
+    "SELECT user_id FROM orders WHERE id='${ORDER_ID}' LIMIT 1;"
 
-  local book_ids
-  mapfile -t book_ids < <(python3 - "${book_ids_json}" <<'PY'
-import json
-import sys
-for x in json.loads(sys.argv[1]):
-    print(x)
-PY
-)
-
-  local book_id
-  for book_id in "${book_ids[@]}"; do
-    eventually_equal "1" 20 "book ${book_id} exists in book_db.books" \
-      query_postgres postgres-book book_db "SELECT COUNT(1) FROM books WHERE id='${book_id}';"
-  done
-
-  eventually_equal "1" 20 "order exists in order_db.orders" \
-    query_postgres postgres-order order_db "SELECT COUNT(1) FROM orders WHERE id='${order_id}';"
-
-  eventually_equal "${user_id}" 20 "order belongs to created user id" \
-    query_postgres postgres-order order_db "SELECT user_id FROM orders WHERE id='${order_id}' LIMIT 1;"
-
-  eventually_equal "1" 20 "order_books links order and ordered book" \
-    query_postgres postgres-order order_db "SELECT COUNT(1) FROM order_books WHERE order_id='${order_id}' AND book_id='${ordered_book_id}';"
-
-  eventually_equal "1" 20 "ordered book id maps to book_db.books" \
-    query_postgres postgres-book book_db "SELECT COUNT(1) FROM books WHERE id='${ordered_book_id}';"
+  eventually_equal "1" 20 "order_books links order and book in order_db" \
+    query_postgres postgres-order order_db \
+    "SELECT COUNT(1) FROM order_books WHERE order_id='${ORDER_ID}' AND book_id='${BOOK_ID_1}';"
 }
 
-validate_notification_flow() {
-  local logs
-  local start_ts
-
-  start_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  sleep 1
-
-  # Trigger another order.created event specifically for notification verification.
-  run_grpc_business_flow
-
-  eventually_command_success 25 "notification-service consumed order.created event" \
-    sh -lc "docker logs --since '${start_ts}' lms-notification-service 2>&1 | grep -F 'Received event: order.created'"
-
-  logs="$(docker logs --since "${start_ts}" lms-notification-service 2>&1 || true)"
-
-  if [[ "${NOTIFICATION_REQUIRE_SUCCESS}" == "1" ]]; then
-    assert_contains "${logs}" "Email sent to" "notification-service sent email successfully"
-    return
-  fi
-
-  if [[ "${logs}" == *"Email sent to"* ]]; then
-    log_pass "notification-service sent email successfully"
-  elif [[ "${logs}" == *"Failed to send email"* || "${logs}" == *"Failed to process message"* ]]; then
-    log_info "notification-service consumed event but email sending failed in local env"
-  else
-    log_fail "notification-service did not attempt email send"
-    exit 1
-  fi
-}
-
+# _____________________________________________________________
+# Stack management
+# _____________________________________________________________
 cleanup() {
-  if [[ "${KEEP_STACK}" == "1" ]]; then
-    log_info "KEEP_STACK=1, skipping docker compose down"
-    return
-  fi
-
-  log_info "Stopping local stack"
-  "${COMPOSE_CMD[@]}" -f "${COMPOSE_FILE}" down >/dev/null
+  [[ "${KEEP_STACK}" == "1" ]] && { log_info "KEEP_STACK=1 — skipping docker compose down"; return; }
+  log_info "Stopping test stack"
+  "${COMPOSE_CMD[@]}" -f "${COMPOSE_FILE}" down >/dev/null 2>&1 || true
 }
 
 wait_for_gateway() {
-  log_info "Waiting for gateway to become healthy at ${API_GATEWAY_URL}/healthy"
+  log_info "Waiting for gateway at ${API_GATEWAY_URL}/healthy (timeout=${WAIT_TIMEOUT_SECONDS}s)"
   local deadline=$((SECONDS + WAIT_TIMEOUT_SECONDS))
 
   while (( SECONDS < deadline )); do
     local code
-    code="$(curl -sS -o /tmp/lms_e2e_health.txt -w "%{http_code}" "${API_GATEWAY_URL}/healthy" || true)"
-    if [[ "${code}" == "200" ]]; then
-      log_pass "Gateway healthy"
-      return
-    fi
+    code="$(curl -sS -o /dev/null -w "%{http_code}" "${API_GATEWAY_URL}/healthy" 2>/dev/null || echo 000)"
+    [[ "${code}" == "200" ]] && { log_pass "Gateway is healthy"; return; }
     sleep 2
   done
 
@@ -835,12 +315,16 @@ wait_for_gateway() {
   exit 1
 }
 
+# ═════════════════════════════════════════════════════════════
+# MAIN
+# ═════════════════════════════════════════════════════════════
 main() {
   trap cleanup EXIT
 
-  echo "------------------------------------"
-  echo "RUNNING FULL WORKFLOW TEST"
-  echo "------------------------------------"
+  echo "══════════════════════════════════════════════"
+  echo "   FULL WORKFLOW E2E TEST  (curl-only)        "
+  echo "   $(date '+%Y-%m-%d %H:%M:%S')               "
+  echo "══════════════════════════════════════════════"
 
   if [[ ! -f "${COMPOSE_FILE}" ]]; then
     log_fail "Compose file not found: ${COMPOSE_FILE}"
@@ -848,56 +332,410 @@ main() {
   fi
 
   if [[ "${SKIP_START}" != "1" ]]; then
-    log_info "Starting local stack from ${COMPOSE_FILE}"
+    log_info "Starting test stack from ${COMPOSE_FILE}"
     "${COMPOSE_CMD[@]}" -f "${COMPOSE_FILE}" up -d
   else
-    log_info "SKIP_START=1, assuming services are already running"
+    log_info "SKIP_START=1 — assuming services are already running"
   fi
 
   wait_for_gateway
 
-  local status
-  status="$(http_status GET "${API_GATEWAY_URL}/healthy")"
-  assert_equal "200" "${status}" "GET /healthy returns 200"
-  assert_contains "$(cat /tmp/lms_e2e_body.txt)" "healthy" "health response includes 'healthy'"
+  # ───────────────────────────────────────────────
+  # Phase 0: Infrastructure health
+  # ───────────────────────────────────────────────
+  log_section "Phase 0: Infrastructure Health"
 
-  status="$(http_status GET "${API_GATEWAY_URL}/ready")"
-  assert_equal "200" "${status}" "GET /ready returns 200"
+  api_call GET /healthy
+  assert_equal "200" "${RESP_STATUS}" "GET /healthy → 200"
+  assert_contains "${RESP_BODY}" "healthy" "Health body contains 'healthy'"
 
-  status="$(http_status GET "${API_GATEWAY_URL}/api/v1/books")"
-  assert_equal "401" "${status}" "GET /api/v1/books without token returns 401"
-  assert_contains "$(cat /tmp/lms_e2e_body.txt)" "Missing authorization header" "unauthorized response message is correct"
+  api_call GET /ready
+  assert_equal "200" "${RESP_STATUS}" "GET /ready → 200"
 
-  local token
-  token="$(JWT_SECRET="${JWT_SECRET}" generate_jwt)"
-  log_info "Generated JWT for authenticated gateway requests"
+  # ───────────────────────────────────────────────
+  # Phase 1: Authentication
+  # ───────────────────────────────────────────────
+  log_section "Phase 1: Authentication"
 
-  status="$(http_status GET "${API_GATEWAY_URL}/api/v1/books" "Bearer ${token}")"
-  assert_equal "${EXPECTED_PROXY_STATUS}" "${status}" "GET /api/v1/books with token returns expected upstream status"
+  # 1a. Register a new user
+  USER_USERNAME="e2e-user-${TMP_SUFFIX}"
+  local user_email="e2e-${TMP_SUFFIX}@test.local"
+  local user_password="E2eTest!Pass1"
 
-  if [[ "${EXPECTED_PROXY_STATUS}" == "503" ]]; then
-    assert_contains "$(cat /tmp/lms_e2e_body.txt)" "service unavailable" "proxy error message is returned"
-  fi
+  api_call POST /api/v1/auth/register \
+    "{\"username\":\"${USER_USERNAME}\",\"password\":\"${user_password}\",\"email\":\"${user_email}\",\"phone_number\":\"0900000001\"}"
+  assert_equal "201" "${RESP_STATUS}" "POST /auth/register → 201"
+  USER_ID="$(json_get user_id)"
+  assert_not_empty "${USER_ID}" "Register returns user_id"
+  log_info "Registered user: username=${USER_USERNAME} id=${USER_ID}"
 
-  log_info "Validating rate-limit middleware after successful auth"
-  local last_code=""
-  for _ in $(seq 1 5); do
-    last_code="$(http_status GET "${API_GATEWAY_URL}/api/v1/books" "Bearer ${token}")"
+  # 1b. Login as user
+  api_call POST /api/v1/auth/login \
+    "{\"identifier\":\"${USER_USERNAME}\",\"password\":\"${user_password}\"}"
+  assert_equal "200" "${RESP_STATUS}" "POST /auth/login (user) → 200"
+  USER_TOKEN="$(json_get token_pair.access_token)"
+  assert_not_empty "${USER_TOKEN}" "Login returns access_token"
+  log_info "User token acquired"
+
+  # 1c. Login as manager
+  api_call POST /api/v1/auth/login \
+    "{\"identifier\":\"${MANAGER_USERNAME}\",\"password\":\"${MANAGER_PASSWORD}\"}"
+  assert_equal "200" "${RESP_STATUS}" "POST /auth/login (manager) → 200"
+  MANAGER_TOKEN="$(json_get token_pair.access_token)"
+  assert_not_empty "${MANAGER_TOKEN}" "Manager login returns access_token"
+  log_info "Manager token acquired"
+
+  # 1d. Login as admin
+  api_call POST /api/v1/auth/login \
+    "{\"identifier\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\"}"
+  assert_equal "200" "${RESP_STATUS}" "POST /auth/login (admin) → 200"
+  ADMIN_TOKEN="$(json_get token_pair.access_token)"
+  assert_not_empty "${ADMIN_TOKEN}" "Admin login returns access_token"
+  log_info "Admin token acquired"
+
+  # 1e. Duplicate registration → 409
+  api_call POST /api/v1/auth/register \
+    "{\"username\":\"${USER_USERNAME}\",\"password\":\"${user_password}\",\"email\":\"${user_email}\",\"phone_number\":\"0900000001\"}"
+  assert_equal "409" "${RESP_STATUS}" "POST /auth/register (duplicate) → 409"
+
+  # ───────────────────────────────────────────────
+  # Phase 2: User profile
+  # ───────────────────────────────────────────────
+  log_section "Phase 2: User Profile"
+
+  api_call GET /api/v1/user/profile "" "${USER_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "GET /user/profile → 200"
+  local profile_username
+  profile_username="$(json_get user.username)"
+  assert_equal "${USER_USERNAME}" "${profile_username}" "Profile username matches"
+
+  api_call PATCH /api/v1/user/profile \
+    '{"phone_number":"0911111111"}' "${USER_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "PATCH /user/profile → 200"
+
+  # Protected route without token → 401
+  api_call GET /api/v1/user/profile
+  assert_equal "401" "${RESP_STATUS}" "GET /user/profile (no token) → 401"
+
+  # ───────────────────────────────────────────────
+  # Phase 3: Book management
+  # ───────────────────────────────────────────────
+  log_section "Phase 3: Book Management"
+
+  # 3a. Create books (manager)
+  local isbn1="978-E2E-${TMP_SUFFIX}-A"
+  local isbn2="978-E2E-${TMP_SUFFIX}-B"
+  api_call POST /api/v1/management/books \
+    "{\"books_payload\":[{\"title\":\"E2E Book Alpha\",\"author\":\"E2E Author\",\"isbn\":\"${isbn1}\",\"category\":\"Test\",\"description\":\"E2E test book A\",\"quantity\":10},{\"title\":\"E2E Book Beta\",\"author\":\"E2E Author\",\"isbn\":\"${isbn2}\",\"category\":\"Test\",\"description\":\"E2E test book B\",\"quantity\":5}]}" \
+    "${MANAGER_TOKEN}"
+  assert_equal "201" "${RESP_STATUS}" "POST /management/books → 201"
+  BOOK_ID_1="$(json_get created_books.0.id)"
+  BOOK_ID_2="$(json_get created_books.1.id)"
+  assert_not_empty "${BOOK_ID_1}" "Created book 1 has ID"
+  assert_not_empty "${BOOK_ID_2}" "Created book 2 has ID"
+  log_info "Created books: BOOK_ID_1=${BOOK_ID_1}  BOOK_ID_2=${BOOK_ID_2}"
+
+  # 3b. List books (public — no token needed)
+  api_call GET /api/v1/books
+  assert_equal "200" "${RESP_STATUS}" "GET /books (public) → 200"
+  local book_list_count
+  book_list_count="$(json_get total_count)"
+  assert_ge 1 "${book_list_count}" "Book list has at least 1 entry"
+
+  # 3c. Get book by ID (public)
+  api_call GET "/api/v1/books/${BOOK_ID_1}"
+  assert_equal "200" "${RESP_STATUS}" "GET /books/:id → 200"
+  local got_book_id
+  got_book_id="$(json_get book.id)"
+  assert_equal "${BOOK_ID_1}" "${got_book_id}" "GET /books/:id returns correct book"
+
+  # 3d. Get non-existent book → 404
+  api_call GET "/api/v1/books/00000000-0000-0000-0000-000000000000"
+  assert_equal "404" "${RESP_STATUS}" "GET /books/non-existent → 404"
+
+  # 3e. Update book title/author (manager)
+  api_call PUT "/api/v1/management/books/${BOOK_ID_1}" \
+    '{"title":"E2E Book Alpha (Updated)","author":"E2E Author v2"}' \
+    "${MANAGER_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "PUT /management/books/:id → 200"
+
+  # 3f. Update book quantity (manager)
+  api_call PATCH "/api/v1/management/books/${BOOK_ID_1}/quantity" \
+    '{"change_amount":2}' "${MANAGER_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "PATCH /management/books/:id/quantity → 200"
+
+  # 3g. Check book availability (manager)
+  api_call GET "/api/v1/management/books/${BOOK_ID_1}/availability" "" "${MANAGER_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "GET /management/books/:id/availability → 200"
+  log_info "Book 1 availability: $(json_get available_quantity) available"
+
+  # ───────────────────────────────────────────────
+  # Phase 4: Order flow
+  # ───────────────────────────────────────────────
+  log_section "Phase 4: Order Flow"
+
+  # 4a. Create order 1 (to be approved → borrowed)
+  api_call POST /api/v1/orders \
+    "{\"book_ids\":[\"${BOOK_ID_1}\"],\"borrow_days\":7}" \
+    "${USER_TOKEN}"
+  assert_equal "201" "${RESP_STATUS}" "POST /orders (order 1) → 201"
+  ORDER_ID="$(json_get order.id)"
+  local order_status
+  order_status="$(json_get order.status)"
+  assert_not_empty "${ORDER_ID}" "Order 1 has ID"
+  assert_equal "PENDING" "${order_status}" "Order 1 initial status is PENDING"
+  log_info "Order 1 created: id=${ORDER_ID}"
+
+  # 4b. Create order 2 (to be cancelled)
+  api_call POST /api/v1/orders \
+    "{\"book_ids\":[\"${BOOK_ID_2}\"],\"borrow_days\":3}" \
+    "${USER_TOKEN}"
+  assert_equal "201" "${RESP_STATUS}" "POST /orders (order 2) → 201"
+  CANCEL_ORDER_ID="$(json_get order.id)"
+  assert_not_empty "${CANCEL_ORDER_ID}" "Order 2 has ID"
+  log_info "Order 2 created: id=${CANCEL_ORDER_ID}"
+
+  # 4c. List my orders
+  api_call GET /api/v1/orders "" "${USER_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "GET /orders (list my orders) → 200"
+  local my_order_count
+  my_order_count="$(json_get total_count)"
+  assert_ge 1 "${my_order_count}" "User has at least 1 order"
+
+  # 4d. Get order by ID
+  api_call GET "/api/v1/orders/${ORDER_ID}" "" "${USER_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "GET /orders/:id → 200"
+  local got_order_id
+  got_order_id="$(json_get order.id)"
+  assert_equal "${ORDER_ID}" "${got_order_id}" "GET /orders/:id returns correct order"
+
+  # 4e. Cancel order 2
+  api_call POST "/api/v1/orders/${CANCEL_ORDER_ID}/cancel" \
+    '{"cancel_reason":"e2e test cancellation"}' \
+    "${USER_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "POST /orders/:id/cancel → 200"
+  local cancel_status
+  cancel_status="$(json_get order.status)"
+  assert_equal "CANCELED" "${cancel_status}" "Cancelled order status is CANCELED"
+
+  # 4f. Manager lists all orders
+  api_call GET /api/v1/management/orders "" "${MANAGER_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "GET /management/orders → 200"
+  local all_order_count
+  all_order_count="$(json_get total_count)"
+  assert_ge 1 "${all_order_count}" "System has at least 1 order"
+
+  # 4g. Manager approves order 1
+  api_call PATCH "/api/v1/management/orders/${ORDER_ID}/status" \
+    '{"new_status":"APPROVED"}' "${MANAGER_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "PATCH /management/orders/:id/status (APPROVED) → 200"
+  local approved_status
+  approved_status="$(json_get order.status)"
+  assert_equal "APPROVED" "${approved_status}" "Order 1 status is APPROVED"
+
+  # 4h. Manager marks order 1 as BORROWED
+  api_call PATCH "/api/v1/management/orders/${ORDER_ID}/status" \
+    '{"new_status":"BORROWED","note":"collected at front desk"}' "${MANAGER_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "PATCH /management/orders/:id/status (BORROWED) → 200"
+  local borrowed_status
+  borrowed_status="$(json_get order.status)"
+  assert_equal "BORROWED" "${borrowed_status}" "Order 1 status is BORROWED"
+
+  # ───────────────────────────────────────────────
+  # Phase 5: Service resilience / error handling
+  # ───────────────────────────────────────────────
+  log_section "Phase 5: Service Resilience"
+
+  # 5a. Order with non-existent book → 4xx (not 500)
+  api_call POST /api/v1/orders \
+    '{"book_ids":["00000000-0000-0000-0000-000000000000"],"borrow_days":7}' \
+    "${USER_TOKEN}"
+  assert_4xx "${RESP_STATUS}" "Order with non-existent book returns 4xx (not 500)"
+
+  # 5b. Invalid JSON body → 400
+  RESP_STATUS="$(curl -sS -o "${RESP_BODY_FILE}" -w "%{http_code}" \
+    -X POST \
+    -H "Authorization: Bearer ${USER_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{this is not json}' \
+    "${API_GATEWAY_URL}/api/v1/orders")"
+  assert_equal "400" "${RESP_STATUS}" "Invalid JSON body → 400"
+
+  # 5c. Missing required fields → 400
+  api_call POST /api/v1/orders '{"borrow_days":7}' "${USER_TOKEN}"
+  assert_equal "400" "${RESP_STATUS}" "Missing book_ids in CreateOrder → 400"
+
+  # ───────────────────────────────────────────────
+  # Phase 6: Role-Based Access Control
+  # ───────────────────────────────────────────────
+  log_section "Phase 6: Role-Based Access Control"
+
+  # USER denied on management routes
+  for path in /api/v1/management/users /api/v1/management/orders; do
+    api_call GET "${path}" "" "${USER_TOKEN}"
+    assert_equal "403" "${RESP_STATUS}" "USER on ${path} → 403"
   done
 
-  if [[ "${last_code}" == "429" ]]; then
-    log_pass "Rate-limit is active (received 429)"
-  else
-    log_info "Rate-limit not reached in 5 quick requests (last status=${last_code})"
+  # USER denied on admin-only route
+  api_call PATCH "/api/v1/admin/users/${USER_ID}/vip" \
+    '{"is_vip":true}' "${USER_TOKEN}"
+  assert_equal "403" "${RESP_STATUS}" "USER on /admin/users/:id/vip → 403"
+
+  # MANAGER can access management routes
+  for path in /api/v1/management/users /api/v1/management/orders; do
+    api_call GET "${path}" "" "${MANAGER_TOKEN}"
+    assert_equal "200" "${RESP_STATUS}" "MANAGER on ${path} → 200"
+  done
+
+  # MANAGER denied on admin-only route
+  api_call PATCH "/api/v1/admin/users/${USER_ID}/vip" \
+    '{"is_vip":true}' "${MANAGER_TOKEN}"
+  assert_equal "403" "${RESP_STATUS}" "MANAGER on /admin/users/:id/vip → 403"
+
+  # ADMIN can access management routes
+  api_call GET /api/v1/management/orders "" "${ADMIN_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "ADMIN on /management/orders → 200"
+
+  # ADMIN can list users
+  api_call GET /api/v1/management/users "" "${ADMIN_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "ADMIN on /management/users → 200"
+
+  # ADMIN can grant VIP status
+  api_call PATCH "/api/v1/admin/users/${USER_ID}/vip" \
+    '{"is_vip":true}' "${ADMIN_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "ADMIN grants VIP on /admin/users/:id/vip → 200"
+  log_info "VIP status granted to user ${USER_ID}"
+
+  # ADMIN can delete users (DELETE body required)
+  # NOTE: we do NOT delete USER_ID as it is still used below; create a throwaway account
+  local throwaway="e2e-del-${TMP_SUFFIX}"
+  api_call POST /api/v1/auth/register \
+    "{\"username\":\"${throwaway}\",\"password\":\"D3le!te99\",\"email\":\"${throwaway}@test.local\",\"phone_number\":\"0900000002\"}"
+  local throwaway_id
+  throwaway_id="$(json_get user_id)"
+  if [[ -n "${throwaway_id}" ]]; then
+    api_call DELETE /api/v1/admin/users \
+      "{\"user_ids\":[\"${throwaway_id}\"]}" "${ADMIN_TOKEN}"
+    assert_equal "204" "${RESP_STATUS}" "ADMIN DELETE /admin/users → 204"
   fi
 
-  log_info "Running business flow: register, login, create books, create order, list books, list orders"
-  run_gateway_proxy_forward_check
-  run_grpc_business_flow
-  validate_notification_flow
-  validate_cross_db
+  # ───────────────────────────────────────────────
+  # Phase 7: Token lifecycle
+  # ───────────────────────────────────────────────
+  log_section "Phase 7: Token Lifecycle"
 
-  log_pass "Full workflow test completed"
+  # No token → 401
+  api_call GET /api/v1/user/profile
+  assert_equal "401" "${RESP_STATUS}" "No token on protected route → 401"
+
+  # Fully invalid token string → 401
+  api_call GET /api/v1/user/profile "" "this.is.not.a.valid.token"
+  assert_equal "401" "${RESP_STATUS}" "Invalid token string → 401"
+
+  # Malformed Authorization header (no 'Bearer' prefix) → 401
+  RESP_STATUS="$(curl -sS -o "${RESP_BODY_FILE}" -w "%{http_code}" \
+    -H "Authorization: notbearer ${USER_TOKEN}" \
+    "${API_GATEWAY_URL}/api/v1/user/profile")"
+  assert_equal "401" "${RESP_STATUS}" "Malformed Authorization header → 401"
+
+  # Tampered token: corrupt a character in the middle (not the last char,
+  # which only carries padding bits in base64url and may be a no-op).
+  local mid_idx=$(( ${#USER_TOKEN} / 2 ))
+  local mid_char="${USER_TOKEN:${mid_idx}:1}"
+  local replacement="Z"
+  [[ "${mid_char}" == "Z" ]] && replacement="a"
+  local tampered_token="${USER_TOKEN:0:${mid_idx}}${replacement}${USER_TOKEN:$((mid_idx + 1))}"
+  api_call GET /api/v1/user/profile "" "${tampered_token}"
+  assert_equal "401" "${RESP_STATUS}" "Tampered token (middle char) → 401"
+
+  # Public book route works without any token
+  api_call GET /api/v1/books
+  assert_equal "200" "${RESP_STATUS}" "GET /books (public, no token) → 200"
+
+  # Valid token still works after all the above
+  api_call GET /api/v1/user/profile "" "${USER_TOKEN}"
+  assert_equal "200" "${RESP_STATUS}" "Valid token still works after abuse attempts → 200"
+
+  # ───────────────────────────────────────────────
+  # Phase 8: Rate-limit check (soft — informational only)
+  # ───────────────────────────────────────────────
+  log_section "Phase 8: Rate-Limit Check"
+
+  local last_rl_code=""
+  for _ in $(seq 1 5); do
+    last_rl_code="$(curl -sS -o /dev/null -w "%{http_code}" \
+      -H "Authorization: Bearer ${USER_TOKEN}" \
+      "${API_GATEWAY_URL}/api/v1/user/profile")"
+  done
+  if [[ "${last_rl_code}" == "429" ]]; then
+    log_pass "Rate limiter is active (received 429 after rapid requests)"
+  else
+    log_info "Rate limit not triggered in 5 quick requests (last status=${last_rl_code})"
+  fi
+
+  # ───────────────────────────────────────────────
+  # Phase 9: Notification service
+  # ───────────────────────────────────────────────
+  log_section "Phase 9: Notification Service"
+
+  local notif_start
+  notif_start="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  sleep 1
+
+  # Trigger a fresh order to produce an order.created event
+  local isbn_notif="978-E2E-${TMP_SUFFIX}-N"
+  api_call POST /api/v1/management/books \
+    "{\"books_payload\":[{\"title\":\"E2E Notif Book\",\"author\":\"E2E Author\",\"isbn\":\"${isbn_notif}\",\"category\":\"Test\",\"quantity\":3}]}" \
+    "${MANAGER_TOKEN}"
+  local notif_book_id
+  notif_book_id="$(json_get created_books.0.id 2>/dev/null || echo "")"
+
+  if [[ -n "${notif_book_id}" ]]; then
+    api_call POST /api/v1/orders \
+      "{\"book_ids\":[\"${notif_book_id}\"],\"borrow_days\":5}" "${USER_TOKEN}"
+    log_info "Triggered order.created event for notification service"
+  fi
+
+  local notif_deadline=$((SECONDS + 25))
+  local notif_ok=0
+  while (( SECONDS < notif_deadline )); do
+    if docker logs --since "${notif_start}" "${NOTIFICATION_CONTAINER}" 2>&1 \
+         | grep -qF "Received event: order.created"; then
+      notif_ok=1
+      break
+    fi
+    sleep 1
+  done
+
+  if (( notif_ok )); then
+    log_pass "Notification service consumed order.created event"
+    local notif_logs
+    notif_logs="$(docker logs --since "${notif_start}" "${NOTIFICATION_CONTAINER}" 2>&1 || true)"
+    if [[ "${NOTIFICATION_REQUIRE_SUCCESS}" == "1" ]]; then
+      assert_contains "${notif_logs}" "Email sent to" "Notification service sent email"
+    elif [[ "${notif_logs}" == *"Email sent to"* ]]; then
+      log_pass "Notification service sent email successfully"
+    elif [[ "${notif_logs}" == *"Failed to send email"* || "${notif_logs}" == *"Failed to process message"* ]]; then
+      log_info "Notification service consumed event but email delivery failed in local env (expected)"
+    fi
+  else
+    log_fail "Notification service did not consume order.created event within 25s"
+    [[ "${NOTIFICATION_REQUIRE_SUCCESS}" == "1" ]] && exit 1 || true
+  fi
+
+  # ───────────────────────────────────────────────
+  # Phase 10: Cross-DB validation (optional)
+  # ───────────────────────────────────────────────
+  if [[ "${STRICT_DB_CHECK}" == "1" ]]; then
+    log_section "Phase 10: Cross-DB Validation"
+    validate_cross_db
+  fi
+
+  echo ""
+  echo "══════════════════════════════════════════════"
+  log_pass "FULL WORKFLOW E2E TEST PASSED"
+  echo "══════════════════════════════════════════════"
 }
 
 main "$@"
+

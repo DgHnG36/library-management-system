@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/metadata"
 )
 
 type BookClientInterface interface {
@@ -64,6 +65,16 @@ func (h *BookHandler) Close() {
 			h.logger.Error("Failed to close book service client connection", err)
 		}
 	}
+}
+
+// enrichContext attaches the authenticated user's ID and role as gRPC outgoing
+// metadata so the downstream book-service interceptor can read them.
+func enrichContext(c *gin.Context) context.Context {
+	return metadata.AppendToOutgoingContext(
+		c.Request.Context(),
+		"x-user-id", c.GetString("X-User-ID"),
+		"x-user-role", c.GetString("X-User-Role"),
+	)
 }
 
 func (h *BookHandler) GetBook(c *gin.Context) {
@@ -129,7 +140,7 @@ func (h *BookHandler) CreateBooks(c *gin.Context) {
 	}
 
 	grpcReq := h.mapper.MapPbCreateBooksRequest(&req)
-	resp, err := h.bookServiceClient.CreateBooks(c.Request.Context(), grpcReq)
+	resp, err := h.bookServiceClient.CreateBooks(enrichContext(c), grpcReq)
 	if err != nil {
 		h.logger.Error("Failed to create books", err)
 		appErr := pkgerrors.FromGRPCError(err)
@@ -160,7 +171,7 @@ func (h *BookHandler) UpdateBook(c *gin.Context) {
 	}
 
 	grpcReq := h.mapper.MapPbUpdateBookRequest(&req)
-	resp, err := h.bookServiceClient.UpdateBook(c.Request.Context(), grpcReq)
+	resp, err := h.bookServiceClient.UpdateBook(enrichContext(c), grpcReq)
 	if err != nil {
 		h.logger.Error("Failed to update book", err, logger.Fields{
 			"book_id": req.ID,
@@ -188,7 +199,7 @@ func (h *BookHandler) DeleteBook(c *gin.Context) {
 	}
 
 	grpcReq := h.mapper.MapPbDeleteBooksRequest(&req)
-	err := h.bookServiceClient.DeleteBooks(c.Request.Context(), grpcReq)
+	err := h.bookServiceClient.DeleteBooks(enrichContext(c), grpcReq)
 	if err != nil {
 		h.logger.Error("Failed to delete book", err, logger.Fields{
 			"book_id": bookID,
@@ -198,7 +209,7 @@ func (h *BookHandler) DeleteBook(c *gin.Context) {
 		return
 	}
 
-	c.JSON(204, nil)
+	c.JSON(200, gin.H{"message": "book deleted successfully"})
 }
 
 func (h *BookHandler) CheckBookAvailability(c *gin.Context) {
@@ -212,7 +223,7 @@ func (h *BookHandler) CheckBookAvailability(c *gin.Context) {
 	}
 
 	grpcReq := h.mapper.MapPbCheckBookAvailabilityRequest(&req)
-	resp, err := h.bookServiceClient.CheckAvailability(c.Request.Context(), grpcReq)
+	resp, err := h.bookServiceClient.CheckAvailability(enrichContext(c), grpcReq)
 	if err != nil {
 		h.logger.Error("Failed to check book availability", err, logger.Fields{
 			"book_id": req.BookID,
@@ -252,7 +263,7 @@ func (h *BookHandler) UpdateBookQuantity(c *gin.Context) {
 	}
 
 	grpcReq := h.mapper.MapPbUpdateBookQuantityRequest(&req)
-	resp, err := h.bookServiceClient.UpdateBookQuantity(c.Request.Context(), grpcReq)
+	resp, err := h.bookServiceClient.UpdateBookQuantity(enrichContext(c), grpcReq)
 	if err != nil {
 		h.logger.Error("Failed to update book quantity", err, logger.Fields{
 			"book_id":       req.BookID,
@@ -282,6 +293,17 @@ func (h *BookHandler) CheckConnection() (bool, error) {
 /* HELPER METHODS */
 
 func (h *BookHandler) identifyTitle(identifier string) bool {
-	// TODO: Implement logic to identify if the identifier is a title
-	return true // Placeholder, should be replaced with actual logic
+	if len(identifier) != 36 {
+		return true
+	}
+	for i, c := range identifier {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return true
+			}
+		} else if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return true
+		}
+	}
+	return false
 }

@@ -66,6 +66,11 @@ func main() {
 		},
 	})
 
+	if err := repository.SeedDefaultUsers(db); err != nil {
+		rootLogger.Fatal("Failed to seed default users", err)
+	}
+	rootLogger.Info("Default users seeded (lms-manager, lms-admin)")
+
 	// Wire up layers
 	userRepo := repository.NewUserRepo(db)
 	userService := applications.NewUserService(userRepo, cfg.JWT.JWTSecret, cfg.JWT.JWTAlgorithm, cfg.JWT.JWTExpMins, rootLogger)
@@ -74,6 +79,7 @@ func main() {
 	// Start gRPC server
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
+			interceptor.MetadataInterceptor(),
 			interceptor.LoggingInterceptor(rootLogger),
 			interceptor.RecoveryInterceptor(rootLogger),
 		),

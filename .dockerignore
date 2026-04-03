@@ -47,11 +47,4 @@ test/
 !test/unit/test-book-service/go.mod
 !test/unit/test-order-service/go.mod
 !test/integration/
-!test/integration/test-gateway-service/
-!test/integration/test-user-service/
-!test/integration/test-book-service/
-!test/integration/test-order-service/
-!test/integration/test-gateway-service/go.mod
-!test/integration/test-user-service/go.mod
-!test/integration/test-book-service/go.mod
-!test/integration/test-order-service/go.mod
+!test/integration/go.mod

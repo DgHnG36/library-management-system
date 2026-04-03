@@ -116,6 +116,8 @@ func FromGRPCError(err error) *AppError {
 		return ErrRateLimitExceeded.Clone().WithMessage(st.Message())
 	case codes.Aborted:
 		return ErrConflict.Clone().WithMessage(st.Message())
+	case codes.FailedPrecondition:
+		return ErrBadRequest.Clone().WithMessage(st.Message())
 	default:
 		return ErrInternalError.Clone().WithMessage(st.Message())
 	}

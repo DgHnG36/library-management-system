@@ -15,10 +15,7 @@ COPY test/unit/test-gateway-service/go.mod ./test/unit/test-gateway-service/
 COPY test/unit/test-user-service/go.mod ./test/unit/test-user-service/
 COPY test/unit/test-book-service/go.mod ./test/unit/test-book-service/
 COPY test/unit/test-order-service/go.mod ./test/unit/test-order-service/
-COPY test/integration/test-gateway-service/go.mod ./test/integration/test-gateway-service/
-COPY test/integration/test-user-service/go.mod ./test/integration/test-user-service/
-COPY test/integration/test-book-service/go.mod ./test/integration/test-book-service/
-COPY test/integration/test-order-service/go.mod ./test/integration/test-order-service/
+COPY test/integration/go.mod ./test/integration/
 
 RUN go work sync
 
