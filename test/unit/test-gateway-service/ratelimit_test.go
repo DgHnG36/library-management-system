@@ -1,123 +1,168 @@
 package main
 
 import (
-	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/internal/middleware"
-	"github.com/DgHnG36/lib-management-system/services/gateway-service/pkg/logger"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 )
 
-// TestRateLimitMiddleware_AdminBypass tests that admin users bypass rate limiting
-func TestRateLimitMiddleware_AdminBypass(t *testing.T) {
+/* HELPER */
+
+func newTestRedisClient(t *testing.T) (*miniredis.Miniredis, *redis.Client) {
+	t.Helper()
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("failed to start miniredis: %v", err)
+	}
+	t.Cleanup(func() { mr.Close() })
+
+	client := redis.NewClient(&redis.Options{
+		Addr: mr.Addr(),
+	})
+	return mr, client
+}
+
+func newRateLimitRouter(mw *middleware.RateLimitMiddleware, role string) *gin.Engine {
+	router := gin.New()
+	router.GET("/api/v1/orders", func(c *gin.Context) {
+		if role != "" {
+			c.Set("X-User-Role", role)
+		}
+	}, mw.Handle(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	return router
+}
+
+/* TESTCASE */
+
+func TestRateLimit_AllowRequestUnderLimit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// Note: This test uses a real Redis client. For production testing,
-	// consider using miniredis or Redis test containers.
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
-	})
+	_, client := newTestRedisClient(t)
+	mw := middleware.NewRateLimitMiddleware(client, 5, 60, testLogger)
+	router := newRateLimitRouter(mw, "")
 
-	// Skip test if Redis is not available
-	if err := redisClient.Ping(context.Background()).Err(); err != nil {
-		t.Skip("Redis not available, skipping test")
-	}
-
-	rlm := middleware.NewRateLimitMiddleware(redisClient, 5, 60, logger.DefaultNewLogger())
-
-	router := gin.New()
-	hitHandler := false
-	router.Use(func(c *gin.Context) {
-		// Simulate auth middleware setting the role in gin context
-		c.Set("X-User-Role", "ADMIN")
-		c.Next()
-	})
-	router.Use(rlm.Handle())
-	router.GET("/api/test", func(c *gin.Context) {
-		hitHandler = true
-		c.JSON(http.StatusOK, gin.H{"ok": true})
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
-	req.Header.Set("X-Forwarded-For", "192.168.1.1")
-
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
 
-	// Handler should be called, context should pass through
-	assert.True(t, hitHandler, "expected handler to be called for admin user")
+	assert.Equal(t, http.StatusNoContent, res.Code)
+	assert.Equal(t, "5", res.Header().Get("X-Rate-Limit"))
+	assert.Equal(t, "4", res.Header().Get("X-Rate-Limit-Remaining"))
 }
 
-// TestRateLimitMiddleware_Headers tests that rate limit headers are set correctly
-func TestRateLimitMiddleware_Headers(t *testing.T) {
+func TestRateLimit_BlockRequestOverLimit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
-	})
+	_, client := newTestRedisClient(t)
+	const maxRequests = 3
+	mw := middleware.NewRateLimitMiddleware(client, maxRequests, 60, testLogger)
+	router := newRateLimitRouter(mw, "")
 
-	if err := redisClient.Ping(context.Background()).Err(); err != nil {
-		t.Skip("Redis not available, skipping test")
+	for i := 0; i < maxRequests; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		assert.Equal(t, http.StatusNoContent, res.Code, "request %d should pass", i+1)
 	}
 
-	rlm := middleware.NewRateLimitMiddleware(redisClient, 10, 60, logger.DefaultNewLogger())
-
-	router := gin.New()
-	router.Use(rlm.Handle())
-	router.GET("/api/test", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"ok": true})
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
 	res := httptest.NewRecorder()
-
 	router.ServeHTTP(res, req)
 
-	assert.Equal(t, "10", res.Header().Get("X-Rate-Limit"), "expected X-Rate-Limit header")
-	assert.NotEmpty(t, res.Header().Get("X-Rate-Limit-Remaining"), "expected X-Rate-Limit-Remaining header")
+	assert.Equal(t, http.StatusTooManyRequests, res.Code, "request over limit should return 429")
+	assert.Equal(t, "0", res.Header().Get("X-Rate-Limit-Remaining"))
 }
 
-// TestRateLimitMiddleware_LimitExceeded tests that 429 is returned when limit is exceeded
-func TestRateLimitMiddleware_LimitExceeded(t *testing.T) {
+func TestRateLimit_AdminBypass(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
-	})
+	_, client := newTestRedisClient(t)
+	mw := middleware.NewRateLimitMiddleware(client, 1, 60, testLogger)
+	router := newRateLimitRouter(mw, "ADMIN")
 
-	if err := redisClient.Ping(context.Background()).Err(); err != nil {
-		t.Skip("Redis not available, skipping test")
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		assert.Equal(t, http.StatusNoContent, res.Code, "admin request %d should bypass rate limit", i+1)
+		assert.Empty(t, res.Header().Get("X-Rate-Limit"), "admin should not have rate limit headers")
 	}
+}
 
-	rlm := middleware.NewRateLimitMiddleware(redisClient, 2, 60, logger.DefaultNewLogger())
+func TestRateLimit_RateLimitHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
 
-	router := gin.New()
-	router.Use(rlm.Handle())
-	router.GET("/api/test", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"ok": true})
-	})
+	_, client := newTestRedisClient(t)
+	const maxRequests = 10
+	mw := middleware.NewRateLimitMiddleware(client, maxRequests, 60, testLogger)
+	router := newRateLimitRouter(mw, "")
 
-	// Clear any existing rate limit keys for httptest default IP (192.0.2.1)
-	// Key format: ratelimit:{role}:{ip} — role is empty for unauthenticated requests
-	ctx := context.Background()
-	redisClient.Del(ctx, "ratelimit::192.0.2.1")
-
-	// Make 3 requests (limit is 2)
-	// httptest defaults to 192.0.2.1 as the remote address
-	for i := 0; i < 3; i++ {
-		req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
+	for i := 1; i <= 3; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
 		res := httptest.NewRecorder()
 		router.ServeHTTP(res, req)
 
-		if i < 2 {
-			assert.Equal(t, http.StatusOK, res.Code, "request %d should succeed", i+1)
-		} else {
-			assert.Equal(t, http.StatusTooManyRequests, res.Code, "request %d should be rate limited", i+1)
-		}
+		assert.Equal(t, "10", res.Header().Get("X-Rate-Limit"))
+		assert.Equal(t, fmt.Sprintf("%d", maxRequests-i), res.Header().Get("X-Rate-Limit-Remaining"),
+			"after %d requests, remaining should be %d", i, maxRequests-i)
 	}
+}
+
+func TestRateLimit_RedisError_FailOpen(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mr, client := newTestRedisClient(t)
+	mr.Close() // force Redis unavailable
+
+	mw := middleware.NewRateLimitMiddleware(client, 5, 60, testLogger)
+	router := newRateLimitRouter(mw, "")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+
+	assert.Equal(t, http.StatusNoContent, res.Code, "should fail open when Redis is unavailable")
+}
+
+func TestRateLimit_DifferentRolesHaveSeparateCounters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	_, client := newTestRedisClient(t)
+	const maxRequests = 2
+	mw := middleware.NewRateLimitMiddleware(client, maxRequests, 60, testLogger)
+
+	makeRouter := func(role string) *gin.Engine {
+		return newRateLimitRouter(mw, role)
+	}
+
+	// Exhaust limit for "user" role
+	userRouter := makeRouter("user")
+	for i := 0; i < maxRequests; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
+		res := httptest.NewRecorder()
+		userRouter.ServeHTTP(res, req)
+		assert.Equal(t, http.StatusNoContent, res.Code)
+	}
+
+	// "user" role is now over limit
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
+	res := httptest.NewRecorder()
+	userRouter.ServeHTTP(res, req)
+	assert.Equal(t, http.StatusTooManyRequests, res.Code, "user role should be rate limited")
+
+	// "manager" role should still have its own separate counter
+	managerRouter := makeRouter("manager")
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
+	res = httptest.NewRecorder()
+	managerRouter.ServeHTTP(res, req)
+	assert.Equal(t, http.StatusNoContent, res.Code, "manager role should have its own counter")
 }

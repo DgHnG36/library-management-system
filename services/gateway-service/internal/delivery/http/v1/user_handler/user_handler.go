@@ -1,6 +1,7 @@
 package user_handler
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -9,12 +10,25 @@ import (
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/internal/dto/user_service_dto"
 	pkgerrors "github.com/DgHnG36/lib-management-system/services/gateway-service/pkg/errors"
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/pkg/logger"
+	userv1 "github.com/DgHnG36/lib-management-system/shared/go/v1/user"
 	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 )
 
+type UserClientInterface interface {
+	Register(ctx context.Context, req *userv1.RegisterRequest) (*userv1.RegisterResponse, error)
+	Login(ctx context.Context, req *userv1.LoginRequest) (*userv1.LoginResponse, error)
+	GetProfile(ctx context.Context, req *userv1.GetProfileRequest) (*userv1.UserProfileResponse, error)
+	UpdateProfile(ctx context.Context, req *userv1.UpdateProfileRequest) (*userv1.UserProfileResponse, error)
+	UpdateVIPAccount(ctx context.Context, req *userv1.UpdateVIPAccountRequest) (*userv1.UpdateVIPAccountResponse, error)
+	ListUsers(ctx context.Context, req *userv1.ListUsersRequest) (*userv1.ListUsersResponse, error)
+	DeleteUsers(ctx context.Context, req *userv1.DeleteUsersRequest) error
+	GetConnection() *grpc.ClientConn
+}
+
 type UserHandler struct {
-	userServiceClient *user_service_client.UserServiceClient
+	userServiceClient UserClientInterface
 	mapper            mapper.MapperInterface
 	logger            *logger.Logger
 }
@@ -34,6 +48,14 @@ func NewUserHandler(addr string, log *logger.Logger) *UserHandler {
 	return &UserHandler{
 		userServiceClient: userServiceClient,
 		mapper:            mapper,
+		logger:            log,
+	}
+}
+
+func NewUserHandlerWithClient(client UserClientInterface, m mapper.MapperInterface, log *logger.Logger) *UserHandler {
+	return &UserHandler{
+		userServiceClient: client,
+		mapper:            m,
 		logger:            log,
 	}
 }

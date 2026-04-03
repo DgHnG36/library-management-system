@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 )
 
+type JWTHandlerClient = user_service_client.JWTRefresherClient
+
 type JWTClaims struct {
 	UserID string `json:"user_id"`
 	Role   string `json:"role"`
@@ -25,12 +27,12 @@ type AuthMiddleware struct {
 	expMins      time.Duration
 	skipPaths    map[string]bool
 
-	jwtHandler *user_service_client.JWTRefresher
+	jwtHandlerClient JWTHandlerClient
 
 	logger *logger.Logger
 }
 
-func NewAuthMiddleware(jwtSecret []byte, jwtAlgorithm string, expMins time.Duration, jwtHandler *user_service_client.JWTRefresher, logger *logger.Logger) *AuthMiddleware {
+func NewAuthMiddleware(jwtSecret []byte, jwtAlgorithm string, expMins time.Duration, jwtHandlerClient JWTHandlerClient, logger *logger.Logger) *AuthMiddleware {
 	skipPaths := map[string]bool{
 		"/api/v1/auth/register": true,
 		"/api/v1/auth/login":    true,
@@ -44,12 +46,12 @@ func NewAuthMiddleware(jwtSecret []byte, jwtAlgorithm string, expMins time.Durat
 	}
 
 	return &AuthMiddleware{
-		jwtSecret:    jwtSecret,
-		jwtAlgorithm: jwtAlgorithm,
-		expMins:      expMins,
-		skipPaths:    skipPaths,
-		logger:       logger,
-		jwtHandler:   jwtHandler,
+		jwtSecret:        jwtSecret,
+		jwtAlgorithm:     jwtAlgorithm,
+		expMins:          expMins,
+		skipPaths:        skipPaths,
+		logger:           logger,
+		jwtHandlerClient: jwtHandlerClient,
 	}
 }
 
@@ -94,7 +96,7 @@ func (m *AuthMiddleware) Handle() gin.HandlerFunc {
 
 			rt := c.GetHeader("X-Refresh-Token")
 			if rt != "" {
-				newTokens, err := m.jwtHandler.RefreshToken(c.Request.Context(), rt)
+				newTokens, err := m.jwtHandlerClient.RefreshToken(c.Request.Context(), rt)
 				if err == nil {
 					c.Header("X-New-Access-Token", newTokens.AccessToken)
 					c.Header("X-New-Refresh-Token", newTokens.RefreshToken)
@@ -106,7 +108,7 @@ func (m *AuthMiddleware) Handle() gin.HandlerFunc {
 		}
 
 		c.Set("X-User-ID", claims.UserID)
-		c.Set("X-User-Role", claims.Role)
+		c.Set("X-User-Role", strings.ToUpper(claims.Role))
 		c.Next()
 	}
 }
@@ -114,7 +116,6 @@ func (m *AuthMiddleware) Handle() gin.HandlerFunc {
 func (m *AuthMiddleware) RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role := c.GetString("X-User-Role")
-		role = strings.ToUpper(role)
 		if role != "ADMIN" {
 			m.abortForbidden(c, "Admin privileges required")
 			return
@@ -125,7 +126,6 @@ func (m *AuthMiddleware) RequireAdmin() gin.HandlerFunc {
 func (m *AuthMiddleware) RequireAdminOrManager() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role := c.GetString("X-User-Role")
-		role = strings.ToUpper(role)
 		if role != "ADMIN" && role != "MANAGER" {
 			m.abortForbidden(c, "Admin or Manager privileges required")
 			return

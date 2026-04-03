@@ -76,7 +76,7 @@ type CheckAvailabilityResponseDTO struct {
 
 type UpdateBookQuantityRequestDTO struct {
 	BookID       string `uri:"id" binding:"required"`
-	ChangeAmount int32  `json:"change_amount" binding:"required"`
+	ChangeAmount int32  `json:"change_amount"`
 }
 
 type UpdateBookQuantityResponseDTO struct {

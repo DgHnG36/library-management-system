@@ -1,6 +1,7 @@
 package order_handler
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/internal/clients/order_service_client"
@@ -8,12 +9,24 @@ import (
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/internal/dto/order_service_dto"
 	pkgerrors "github.com/DgHnG36/lib-management-system/services/gateway-service/pkg/errors"
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/pkg/logger"
+	orderv1 "github.com/DgHnG36/lib-management-system/shared/go/v1/order"
 	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 )
 
+type OrderClientInterface interface {
+	CreateOrder(ctx context.Context, req *orderv1.CreateOrderRequest) (*orderv1.OrderResponse, error)
+	GetOrder(ctx context.Context, req *orderv1.GetOrderRequest) (*orderv1.OrderResponse, error)
+	ListMyOrders(ctx context.Context, req *orderv1.ListMyOrdersRequest) (*orderv1.ListOrdersResponse, error)
+	CancelOrder(ctx context.Context, req *orderv1.CancelOrderRequest) (*orderv1.OrderResponse, error)
+	ListAllOrders(ctx context.Context, req *orderv1.ListAllOrdersRequest) (*orderv1.ListOrdersResponse, error)
+	UpdateOrderStatus(ctx context.Context, req *orderv1.UpdateOrderStatusRequest) (*orderv1.OrderResponse, error)
+	GetConnection() *grpc.ClientConn
+}
+
 type OrderHandler struct {
-	orderServiceClient *order_service_client.OrderServiceClient
+	orderServiceClient OrderClientInterface
 	mapper             mapper.MapperInterface
 	logger             *logger.Logger
 }
@@ -32,6 +45,14 @@ func NewOrderHandler(addr string, log *logger.Logger) *OrderHandler {
 	return &OrderHandler{
 		orderServiceClient: orderServiceClient,
 		mapper:             mapper,
+		logger:             log,
+	}
+}
+
+func NewOrderHandlerWithClient(client OrderClientInterface, m mapper.MapperInterface, log *logger.Logger) *OrderHandler {
+	return &OrderHandler{
+		orderServiceClient: client,
+		mapper:             m,
 		logger:             log,
 	}
 }
@@ -194,6 +215,13 @@ func (h *OrderHandler) UpdateOrderStatus(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Error("Failed to bind update order status request (body)", err)
+		c.JSON(400, gin.H{
+			"error": "Invalid request body",
+		})
+		return
+	}
+
+	if req.NewStatus == "" {
 		c.JSON(400, gin.H{
 			"error": "Invalid request body",
 		})

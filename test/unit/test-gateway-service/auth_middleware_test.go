@@ -1,19 +1,19 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/DgHnG36/lib-management-system/services/gateway-service/internal/dto/user_token_dto"
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/internal/middleware"
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/pkg/logger"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"github.com/stretchr/testify/mock"
 )
 
 /* STATIC ENV TESTING */
@@ -23,70 +23,32 @@ var jwtExpMins = 5 * time.Minute
 var testLogger = logger.DefaultNewLogger()
 
 /* MOCK JWT SERVICE */
-type Mock_JWTClaims struct {
-	MockUserID string `json:"mock_user_id"`
-	MockRole   string `json:"mock_role"`
-	MockEmail  string `json:"mock_email"`
-	jwt.StandardClaims
-}
-
-type Mock_TokenPair struct {
-	MockAccessToken  string `json:"mock_access_token"`
-	MockRefreshToken string `json:"mock_refresh_token"`
-}
 
 type Mock_JWTService struct {
-	mockJWTSecret    []byte
-	mockJWTAlgorithm string
-	mockExpMins      time.Duration
+	mock.Mock
 }
 
-func NewMock_JWTService(mockJWTSecret []byte, mockJWTAlgorithm string, mockExpMins time.Duration) *Mock_JWTService {
-	return &Mock_JWTService{
-		mockJWTSecret:    mockJWTSecret,
-		mockJWTAlgorithm: mockJWTAlgorithm,
-		mockExpMins:      mockExpMins,
-	}
+func (m *Mock_JWTService) RefreshToken(ctx context.Context, refreshToken string) (user_token_dto.TokenPairDTO, error) {
+	args := m.Called(ctx, refreshToken)
+	return args.Get(0).(user_token_dto.TokenPairDTO), args.Error(1)
 }
 
-func (m *Mock_JWTService) MockGenerateTokenPair(mockUserID, mockRole, mockEmail string) (*Mock_TokenPair, string, time.Time, error) {
-	mockAccessToken, err := m.mockGenerateAccessToken(mockUserID, mockRole, mockEmail)
-	if err != nil {
-		return nil, "", time.Time{}, err
-	}
-
-	mockRefreshToken := uuid.New().String() + "-" + uuid.New().String()
-	mockRefreshTokenHashed := m.HashMockRefreshToken(mockRefreshToken)
-	timeExpiresAt := time.Now().Add(time.Duration(m.mockExpMins) * time.Minute)
-	return &Mock_TokenPair{
-		MockAccessToken:  mockAccessToken,
-		MockRefreshToken: mockRefreshToken,
-	}, mockRefreshTokenHashed, timeExpiresAt, nil
-}
-
-func (m *Mock_JWTService) mockGenerateAccessToken(mockUserID, mockRole, mockEmail string) (string, error) {
-	expMins := int(m.mockExpMins.Minutes())
-	if expMins <= 0 {
-		expMins = 60
-	}
-
-	claims := Mock_JWTClaims{
-		MockUserID: mockUserID,
-		MockRole:   mockRole,
-		MockEmail:  mockEmail,
+/* HELPER METHODS */
+func generateToken(userID, role, email string, secret []byte, algorithm string, expMins int) (string, error) {
+	claims := middleware.JWTClaims{
+		UserID: userID,
+		Role:   role,
+		Email:  email,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: time.Now().Add(time.Duration(expMins) * time.Minute).Unix(),
 			IssuedAt:  time.Now().Unix(),
-			Issuer:    "lib-management-system-test",
-			Subject:   mockUserID,
-			Audience:  "user-service-test",
+			Issuer:    "lib-management-system",
+			Subject:   userID,
 		},
 	}
 
 	var signingMethod jwt.SigningMethod
-	switch m.mockJWTAlgorithm {
-	case "HS256":
-		signingMethod = jwt.SigningMethodHS256
+	switch algorithm {
 	case "HS512":
 		signingMethod = jwt.SigningMethodHS512
 	default:
@@ -94,116 +56,93 @@ func (m *Mock_JWTService) mockGenerateAccessToken(mockUserID, mockRole, mockEmai
 	}
 
 	token := jwt.NewWithClaims(signingMethod, claims)
-	signedToken, err := token.SignedString(m.mockJWTSecret)
+	return token.SignedString(secret)
+}
+
+func refreshToken(tokenStr string, secret []byte, algorithm string, expMins int) (string, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &middleware.JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return secret, nil
+	})
 	if err != nil {
 		return "", err
 	}
 
-	return signedToken, nil
-}
-
-func (m *Mock_JWTService) HashMockRefreshToken(refreshToken string) string {
-	// For testing purposes, we can just return a simple hash (in production, use a secure hash function)
-	return "hashed-" + refreshToken
-}
-
-func (m *Mock_JWTService) MockValidateAccessToken(tokenStr string) (*Mock_JWTClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenStr, &Mock_JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if token.Method.Alg() != m.mockJWTAlgorithm {
-			return nil, status.Error(codes.Unauthenticated, "unexpected signing method")
-		}
-
-		return m.mockJWTSecret, nil
-	})
-
-	if err != nil {
-		return nil, status.Error(codes.Internal, "unexpected error during token validation")
+	claims, ok := token.Claims.(*middleware.JWTClaims)
+	if !ok || !token.Valid {
+		return "", jwt.ErrSignatureInvalid
 	}
 
-	if claims, ok := token.Claims.(*Mock_JWTClaims); ok && token.Valid {
-		return claims, nil
+	return generateToken(claims.UserID, claims.Role, claims.Email, secret, algorithm, expMins)
+}
+
+func generateTokenWithDuration(userID, role, email string, secret []byte, algorithm string, d time.Duration) (string, error) {
+	claims := middleware.JWTClaims{
+		UserID: userID,
+		Role:   role,
+		Email:  email,
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: time.Now().Add(d).Unix(),
+			IssuedAt:  time.Now().Unix(),
+			Issuer:    "lib-management-system",
+			Subject:   userID,
+		},
 	}
-	return nil, status.Error(codes.Unauthenticated, "invalid token")
+
+	var signingMethod jwt.SigningMethod
+	switch algorithm {
+	case "HS512":
+		signingMethod = jwt.SigningMethodHS512
+	default:
+		signingMethod = jwt.SigningMethodHS256
+	}
+
+	token := jwt.NewWithClaims(signingMethod, claims)
+	return token.SignedString(secret)
 }
 
 /* TESTCASE */
-func TestAuthMiddleware_SkipPathHealth(t *testing.T) {
+func TestAuthMiddleware_SkipPaths(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, nil, nil)
 
-	router := gin.New()
-	hitHandler := false
-	router.GET("/healthy", mw.Handle(), func(c *gin.Context) {
-		hitHandler = true
-		c.Status(http.StatusNoContent)
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/healthy", nil)
-	res := httptest.NewRecorder()
-
-	router.ServeHTTP(res, req)
-
-	assert.Equal(t, http.StatusNoContent, res.Code, "expected status %d, got %d", http.StatusNoContent, res.Code)
-
-	if !hitHandler {
-		t.Fatal("expected downstream handler to be called for skip path")
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"Healthy path", "/healthy"},
+		{"Ready path", "/ready"},
+		{"Metrics path", "/metrics"},
+		{"Register path", "/api/v1/auth/register"},
+		{"Login path", "/api/v1/auth/login"},
 	}
-}
 
-func TestAuthMiddleware_SkipPathReady(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			router := gin.New()
+			hitHandler := false
 
-	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, nil, nil)
+			router.GET(tt.path, mw.Handle(), func(c *gin.Context) {
+				hitHandler = true
+				c.Status(http.StatusNoContent)
+			})
 
-	router := gin.New()
-	hitHandler := false
-	router.GET("/ready", mw.Handle(), func(c *gin.Context) {
-		hitHandler = true
-		c.Status(http.StatusNoContent)
-	})
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			res := httptest.NewRecorder()
+			router.ServeHTTP(res, req)
 
-	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
-	res := httptest.NewRecorder()
-
-	router.ServeHTTP(res, req)
-
-	assert.Equal(t, http.StatusNoContent, res.Code, "expected status %d, got %d", http.StatusNoContent, res.Code)
-
-	if !hitHandler {
-		t.Fatal("expected downstream handler to be called for skip path")
-	}
-}
-
-func TestAuthMiddleware_SkipPathMetrics(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, nil, nil)
-
-	router := gin.New()
-	hitHandler := false
-
-	router.GET("/metrics", mw.Handle(), func(c *gin.Context) {
-		hitHandler = true
-		c.Status(http.StatusNoContent)
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	res := httptest.NewRecorder()
-
-	router.ServeHTTP(res, req)
-
-	assert.Equal(t, http.StatusNoContent, res.Code, "expected status %d, got %d", http.StatusNoContent, res.Code)
-
-	if !hitHandler {
-		t.Fatal("expected downstream handler to be called for skip path")
+			assert.Equal(t, http.StatusNoContent, res.Code, "Path %s should be skipped", tt.path)
+			if !hitHandler {
+				t.Errorf("expected downstream handler to be called for skip path: %s", tt.path)
+			}
+		})
 	}
 }
 
 func TestAuthMiddleware_MissingAuthorizationHeader(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, nil, nil)
+	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, &Mock_JWTService{}, nil)
 
 	router := gin.New()
 	hitHandler := false
@@ -227,7 +166,7 @@ func TestAuthMiddleware_MissingAuthorizationHeader(t *testing.T) {
 func TestAuthMiddleware_InvalidAuthorizationFormat(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, nil, nil)
+	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, &Mock_JWTService{}, nil)
 
 	router := gin.New()
 	hitHandler := false
@@ -237,7 +176,7 @@ func TestAuthMiddleware_InvalidAuthorizationFormat(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
-	req.Header.Set("Authorization", "InvalidFormatToken")
+	req.Header.Set("Authorization", "Invalid-Format-Token")
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
 
@@ -251,7 +190,7 @@ func TestAuthMiddleware_InvalidAuthorizationFormat(t *testing.T) {
 func TestAuthMiddleware_InvalidToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, nil, nil)
+	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, &Mock_JWTService{}, nil)
 
 	router := gin.New()
 	hitHandler := false
@@ -260,7 +199,7 @@ func TestAuthMiddleware_InvalidToken(t *testing.T) {
 		c.Status(http.StatusNoContent)
 	})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
-	req.Header.Set("Authorization", "Bearer InvalidTokenString")
+	req.Header.Set("Authorization", "Bearer Invalid-Token-String")
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
 
@@ -275,26 +214,33 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, nil, testLogger)
-	token, err := middleware.GenerateToken("user-test", "admin", "user@test.com", []byte(jwtSecret), "HS256", 15)
+
+	userID := "user-test-valid-token"
+	userRole := "admin"
+	userEmail := "user-test-valid-token@test.com"
+	token, err := generateToken(userID, userRole, userEmail, []byte(jwtSecret), "HS256", int(jwtExpMins.Minutes()))
 	if err != nil {
 		t.Fatalf("failed to generate token: %v", err)
 	}
 
 	router := gin.New()
 	hitHandler := false
-	var userID any
-	var userRole any
+	userIDRes := ""
+	userRoleRes := ""
 	router.GET("/api/v1/orders", mw.Handle(), func(c *gin.Context) {
 		hitHandler = true
-		userID, _ = c.Get("X-User-ID")
-		userRole, _ = c.Get("X-User-Role")
+		if uid, exists := c.Get("X-User-ID"); exists {
+			userIDRes = uid.(string)
+		}
+		if role, exists := c.Get("X-User-Role"); exists {
+			userRoleRes = role.(string)
+		}
 		c.Status(http.StatusNoContent)
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	res := httptest.NewRecorder()
-
 	router.ServeHTTP(res, req)
 
 	assert.Equal(t, http.StatusNoContent, res.Code, "expected status %d, got %d", http.StatusNoContent, res.Code)
@@ -302,43 +248,24 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 	if !hitHandler {
 		t.Fatal("expected downstream handler to be called for valid token")
 	}
-	assert.Equal(t, "user-test", userID, "expected user id %q, got %v", "user-test", userID)
-	assert.Equal(t, "admin", userRole, "expected user role %q, got %v", "admin", userRole)
+	assert.Equal(t, "user-test-valid-token", userIDRes, "expected user id %q, got %v", "user-test-valid-token", userIDRes)
+	assert.Equal(t, "ADMIN", userRoleRes, "expected user role %q, got %v", "ADMIN", userRoleRes)
 }
 
-func TestAuthMiddleware_SkipPathWithValidToken(t *testing.T) {
+func TestAuthMiddleware_SlidingWindow_ExpiredAccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, nil, testLogger)
-	token, err := middleware.GenerateToken("user-test", "admin", "user@test.com", []byte(jwtSecret), "HS256", 15)
-	if err != nil {
-		t.Fatalf("failed to generate token: %v", err)
+	newTokenPair := user_token_dto.TokenPairDTO{
+		AccessToken:  "new-access-token",
+		RefreshToken: "new-refresh-token",
 	}
+	mockSvc := &Mock_JWTService{}
+	mockSvc.On("RefreshToken", mock.Anything, "test-refresh-token").Return(newTokenPair, nil)
 
-	router := gin.New()
-	hitHandler := false
-	router.GET("/api/v1/books", mw.Handle(), func(c *gin.Context) {
-		hitHandler = true
-		c.Status(http.StatusNoContent)
-	})
+	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, mockSvc, testLogger)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/books", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	res := httptest.NewRecorder()
-	router.ServeHTTP(res, req)
-
-	assert.Equal(t, http.StatusNoContent, res.Code, "expected status %d, got %d", http.StatusNoContent, res.Code)
-
-	if !hitHandler {
-		t.Fatal("expected downstream handler to be called for valid token")
-	}
-}
-
-func TestAuthMiddleware_ExpiredToken(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, nil, testLogger)
-	token, err := middleware.GenerateToken("user-test", "admin", "user@test.com", []byte(jwtSecret), "HS256", -1) // Expire immediately
+	// Token expiring in 30s — within sliding window (jwtExpMins/5 = 1min)
+	token, err := generateTokenWithDuration("user-sliding", "admin", "user-sliding@test.com", []byte(jwtSecret), "HS256", 30*time.Second)
 	if err != nil {
 		t.Fatalf("failed to generate token: %v", err)
 	}
@@ -352,100 +279,61 @@ func TestAuthMiddleware_ExpiredToken(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-Refresh-Token", "test-refresh-token")
 	res := httptest.NewRecorder()
-
-	router.ServeHTTP(res, req)
-	assert.Equal(t, http.StatusUnauthorized, res.Code, "expected status %d, got %d", http.StatusUnauthorized, res.Code)
-
-	if hitHandler {
-		t.Fatal("expected downstream handler not to be called when token is expired")
-	}
-}
-
-func TestAuthMiddleware_SkipPathAuthRegister(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, nil, testLogger)
-
-	router := gin.New()
-	hitHandler := false
-	router.POST("/api/v1/auth/register", mw.Handle(), func(c *gin.Context) {
-		hitHandler = true
-		c.Status(http.StatusNoContent)
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", nil)
-	res := httptest.NewRecorder()
-
 	router.ServeHTTP(res, req)
 
 	assert.Equal(t, http.StatusNoContent, res.Code, "expected status %d, got %d", http.StatusNoContent, res.Code)
 	if !hitHandler {
-		t.Fatal("expected downstream handler to be called for /api/v1/auth/register skip path")
+		t.Fatal("expected downstream handler to be called for valid token in sliding window")
 	}
+	assert.Equal(t, "new-access-token", res.Header().Get("X-New-Access-Token"), "expected new access token in response header")
+	assert.Equal(t, "new-refresh-token", res.Header().Get("X-New-Refresh-Token"), "expected new refresh token in response header")
+	mockSvc.AssertExpectations(t)
 }
 
-func TestAuthMiddleware_SkipPathAuthLogin(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, nil, testLogger)
-
-	router := gin.New()
-	hitHandler := false
-	router.POST("/api/v1/auth/login", mw.Handle(), func(c *gin.Context) {
-		hitHandler = true
-		c.Status(http.StatusNoContent)
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
-	res := httptest.NewRecorder()
-
-	router.ServeHTTP(res, req)
-
-	assert.Equal(t, http.StatusNoContent, res.Code, "expected status %d, got %d", http.StatusNoContent, res.Code)
-	if !hitHandler {
-		t.Fatal("expected downstream handler to be called for /api/v1/auth/login skip path")
-	}
-}
-
-func TestGenerateToken_HS512(t *testing.T) {
-	token, err := middleware.GenerateToken("user-123", "admin", "user@test.com", []byte(jwtSecret), "HS512", 15)
+func TestAuthMiddleware_JWTAlgorithm_HS512(t *testing.T) {
+	token, err := generateToken("user-change-algorithm", "admin", "user-change-algorithm@test.com", []byte(jwtSecret), "HS512", int(jwtExpMins.Minutes()))
 	if err != nil {
 		t.Fatalf("failed to generate token: %v", err)
-	}
-
-	if token == "" {
-		t.Fatal("expected non-empty token")
 	}
 
 	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS512", jwtExpMins, nil, testLogger)
 	router := gin.New()
 	hitHandler := false
+	var userIDRes, userRoleRes string
 
 	router.GET("/api/v1/orders", mw.Handle(), func(c *gin.Context) {
 		hitHandler = true
+		if uid, exists := c.Get("X-User-ID"); exists {
+			userIDRes = uid.(string)
+		}
+		if role, exists := c.Get("X-User-Role"); exists {
+			userRoleRes = role.(string)
+		}
 		c.Status(http.StatusNoContent)
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	res := httptest.NewRecorder()
-
 	router.ServeHTTP(res, req)
 
 	assert.Equal(t, http.StatusNoContent, res.Code, "expected status %d for HS512 token, got %d", http.StatusNoContent, res.Code)
 	if !hitHandler {
 		t.Fatal("expected downstream handler to be called for valid HS512 token")
 	}
+
+	assert.Equal(t, "user-change-algorithm", userIDRes, "expected user id %q from HS512 token, got %v", "user-change-algorithm", userIDRes)
+	assert.Equal(t, "ADMIN", userRoleRes, "expected user role %q from HS512 token, got %v", "ADMIN", userRoleRes)
 }
 
 func TestAuthMiddleware_WrongSecret(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	correctSecret := []byte("correct-secret")
-	wrongSecret := []byte("wrong-secret")
+	wrongSecret := []byte("LoCal-Lms-SeCret-KeY")
 
-	token, err := middleware.GenerateToken("user-123", "admin", "user@test.com", correctSecret, "HS256", 15)
+	token, err := generateToken("user-wrong-secret", "admin", "user-wrong-secret@test.com", []byte(jwtSecret), "HS256", 10)
 	if err != nil {
 		t.Fatalf("failed to generate token: %v", err)
 	}
@@ -462,7 +350,6 @@ func TestAuthMiddleware_WrongSecret(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	res := httptest.NewRecorder()
-
 	router.ServeHTTP(res, req)
 
 	assert.Equal(t, http.StatusUnauthorized, res.Code, "expected status %d for token with wrong secret, got %d", http.StatusUnauthorized, res.Code)
@@ -471,10 +358,10 @@ func TestAuthMiddleware_WrongSecret(t *testing.T) {
 	}
 }
 
-func TestAuthMiddleware_AlgorithmMismatch(t *testing.T) {
+func TestAuthMiddleware_AlgorithmMisMatch(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	token, err := middleware.GenerateToken("user-123", "admin", "user@test.com", []byte(jwtSecret), "HS512", 15)
+	token, err := generateToken("user-algorithm-miss-match", "admin", "user-algorithm-miss-match@test.com", []byte(jwtSecret), "HS512", 10)
 	if err != nil {
 		t.Fatalf("failed to generate token: %v", err)
 	}
@@ -491,7 +378,6 @@ func TestAuthMiddleware_AlgorithmMismatch(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	res := httptest.NewRecorder()
-
 	router.ServeHTTP(res, req)
 
 	assert.Equal(t, http.StatusUnauthorized, res.Code, "expected status %d for algorithm mismatch, got %d", http.StatusUnauthorized, res.Code)
@@ -500,22 +386,23 @@ func TestAuthMiddleware_AlgorithmMismatch(t *testing.T) {
 	}
 }
 
-func TestRefreshToken_ValidToken(t *testing.T) {
-	originalToken, err := middleware.GenerateToken("user-123", "admin", "user@test.com", []byte(jwtSecret), "HS256", 15)
+func TestAuthMiddleware_RefreshToken_ValidToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	newTokenPair := user_token_dto.TokenPairDTO{
+		AccessToken:  "new-access-token",
+		RefreshToken: "new-refresh-token",
+	}
+	mockSvc := &Mock_JWTService{}
+	mockSvc.On("RefreshToken", mock.Anything, "valid-refresh-token").Return(newTokenPair, nil)
+
+	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, mockSvc, testLogger)
+
+	token, err := generateTokenWithDuration("user-refresh-token", "admin", "user-refresh-token@test.com", []byte(jwtSecret), "HS256", 30*time.Second)
 	if err != nil {
-		t.Fatalf("failed to generate original token: %v", err)
+		t.Fatalf("failed to generate token: %v", err)
 	}
 
-	refreshedToken, err := middleware.RefreshToken(originalToken, []byte(jwtSecret), "HS256", 30)
-	if err != nil {
-		t.Fatalf("failed to refresh token: %v", err)
-	}
-
-	if refreshedToken == "" {
-		t.Fatal("expected non-empty refreshed token")
-	}
-
-	mw := middleware.NewAuthMiddleware([]byte(jwtSecret), "HS256", jwtExpMins, nil, testLogger)
 	router := gin.New()
 	hitHandler := false
 	var userID any
@@ -529,7 +416,8 @@ func TestRefreshToken_ValidToken(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/orders", nil)
-	req.Header.Set("Authorization", "Bearer "+refreshedToken)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-Refresh-Token", "valid-refresh-token")
 	res := httptest.NewRecorder()
 
 	router.ServeHTTP(res, req)
@@ -538,6 +426,9 @@ func TestRefreshToken_ValidToken(t *testing.T) {
 	if !hitHandler {
 		t.Fatal("expected downstream handler to be called for refreshed token")
 	}
-	assert.Equal(t, "user-123", userID, "expected user id %q from refreshed token, got %v", "user-123", userID)
-	assert.Equal(t, "admin", userRole, "expected user role %q from refreshed token, got %v", "admin", userRole)
+	assert.Equal(t, "user-refresh-token", userID, "expected user id %q from refreshed token, got %v", "user-refresh-token", userID)
+	assert.Equal(t, "ADMIN", userRole, "expected user role %q from refreshed token, got %v", "ADMIN", userRole)
+	assert.Equal(t, "new-access-token", res.Header().Get("X-New-Access-Token"))
+	assert.Equal(t, "new-refresh-token", res.Header().Get("X-New-Refresh-Token"))
+	mockSvc.AssertExpectations(t)
 }

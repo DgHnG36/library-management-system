@@ -62,6 +62,6 @@ type ListAllOrdersRequestDTO struct {
 
 type UpdateOrderStatusRequestDTO struct {
 	OrderID   string `uri:"id" binding:"required"`
-	NewStatus string `json:"new_status" binding:"required"`
+	NewStatus string `json:"new_status"`
 	Note      string `json:"note,omitempty"`
 }

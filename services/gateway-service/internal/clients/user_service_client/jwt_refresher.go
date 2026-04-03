@@ -8,12 +8,16 @@ import (
 	userv1 "github.com/DgHnG36/lib-management-system/shared/go/v1/user"
 )
 
+type JWTRefresherClient interface {
+	RefreshToken(ctx context.Context, refreshToken string) (user_token_dto.TokenPairDTO, error)
+}
+
 type JWTRefresher struct {
 	userServiceClient *UserServiceClient
 	logger            *logger.Logger
 }
 
-func NewJWTRefresher(userServiceClient *UserServiceClient, logger *logger.Logger) *JWTRefresher {
+func NewJWTRefresher(userServiceClient *UserServiceClient, logger *logger.Logger) JWTRefresherClient {
 	return &JWTRefresher{
 		userServiceClient: userServiceClient,
 		logger:            logger,

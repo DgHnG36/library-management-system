@@ -1,6 +1,7 @@
 package book_handler
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/internal/clients/book_service_client"
@@ -8,12 +9,25 @@ import (
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/internal/dto/mapper"
 	pkgerrors "github.com/DgHnG36/lib-management-system/services/gateway-service/pkg/errors"
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/pkg/logger"
+	bookv1 "github.com/DgHnG36/lib-management-system/shared/go/v1/book"
 	"github.com/gin-gonic/gin"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 )
 
+type BookClientInterface interface {
+	GetBook(ctx context.Context, req *bookv1.GetBookRequest) (*bookv1.BookResponse, error)
+	ListBooks(ctx context.Context, req *bookv1.ListBooksRequest) (*bookv1.ListBooksResponse, error)
+	CreateBooks(ctx context.Context, req *bookv1.CreateBooksRequest) (*bookv1.CreateBooksResponse, error)
+	UpdateBook(ctx context.Context, req *bookv1.UpdateBookRequest) (*bookv1.BookResponse, error)
+	DeleteBooks(ctx context.Context, req *bookv1.DeleteBooksRequest) error
+	CheckAvailability(ctx context.Context, req *bookv1.CheckAvailabilityRequest) (*bookv1.CheckAvailabilityResponse, error)
+	UpdateBookQuantity(ctx context.Context, req *bookv1.UpdateBookQuantityRequest) (*bookv1.UpdateBookQuantityResponse, error)
+	GetConnection() *grpc.ClientConn
+}
+
 type BookHandler struct {
-	bookServiceClient *book_service_client.BookServiceClient
+	bookServiceClient BookClientInterface
 	mapper            mapper.MapperInterface
 	logger            *logger.Logger
 }
@@ -32,6 +46,14 @@ func NewBookHandler(addr string, log *logger.Logger) *BookHandler {
 	return &BookHandler{
 		bookServiceClient: bookServiceClient,
 		mapper:            mapper,
+		logger:            log,
+	}
+}
+
+func NewBookHandlerWithClient(client BookClientInterface, m mapper.MapperInterface, log *logger.Logger) *BookHandler {
+	return &BookHandler{
+		bookServiceClient: client,
+		mapper:            m,
 		logger:            log,
 	}
 }
@@ -216,6 +238,13 @@ func (h *BookHandler) UpdateBookQuantity(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.Error("Failed to bind update book quantity request (body)", err)
+		c.JSON(400, gin.H{
+			"error": "Invalid request body",
+		})
+		return
+	}
+
+	if req.ChangeAmount == 0 {
 		c.JSON(400, gin.H{
 			"error": "Invalid request body",
 		})
