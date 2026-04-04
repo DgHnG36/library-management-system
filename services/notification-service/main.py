@@ -15,8 +15,8 @@ from src.utils.logger import logger
 class NotificationConsumer:
     def __init__(self):
         self.email_service = EmailService()
-        self.user_client = UserClient(config.USER_SVC_ADDR)
-        self.book_client = BookClient(config.BOOK_SVC_ADDR)
+        self.user_client = UserClient(config.GRPC_USER_SERVICE_ADDR)
+        self.book_client = BookClient(config.GRPC_BOOK_SERVICE_ADDR)
         self._connection = None
         self._channel = None
     

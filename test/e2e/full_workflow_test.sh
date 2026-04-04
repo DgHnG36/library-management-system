@@ -32,10 +32,10 @@ SKIP_START="${SKIP_START:-0}"
 STRICT_DB_CHECK="${STRICT_DB_CHECK:-0}"
 NOTIFICATION_REQUIRE_SUCCESS="${NOTIFICATION_REQUIRE_SUCCESS:-0}"
 NOTIFICATION_CONTAINER="${NOTIFICATION_CONTAINER:-lms-notification-service}"
-MANAGER_USERNAME="${MANAGER_USERNAME:-lms-manager}"
-MANAGER_PASSWORD="${MANAGER_PASSWORD:-manager@413}"
-ADMIN_USERNAME="${ADMIN_USERNAME:-lms-admin}"
-ADMIN_PASSWORD="${ADMIN_PASSWORD:-@dm1n79}"
+MANAGER_USERNAME="lms-manager"
+MANAGER_PASSWORD="manager@413"
+ADMIN_USERNAME="lms-admin"
+ADMIN_PASSWORD="@dm1n79"
 # __________________________________________________
 # Check for required commands before starting tests
 # __________________________________________________
@@ -307,11 +307,24 @@ wait_for_gateway() {
   while (( SECONDS < deadline )); do
     local code
     code="$(curl -sS -o /dev/null -w "%{http_code}" "${API_GATEWAY_URL}/healthy" 2>/dev/null || echo 000)"
-    [[ "${code}" == "200" ]] && { log_pass "Gateway is healthy"; return; }
+    [[ "${code}" == "200" ]] && { log_pass "Gateway is healthy"; break; }
     sleep 2
   done
 
-  log_fail "Gateway did not become healthy within ${WAIT_TIMEOUT_SECONDS}s"
+  if (( SECONDS >= deadline )); then
+    log_fail "Gateway did not become healthy within ${WAIT_TIMEOUT_SECONDS}s"
+    exit 1
+  fi
+
+  log_info "Waiting for gateway readiness at ${API_GATEWAY_URL}/ready (all upstream gRPC services must be up)"
+  while (( SECONDS < deadline )); do
+    local code
+    code="$(curl -sS -o /dev/null -w "%{http_code}" "${API_GATEWAY_URL}/ready" 2>/dev/null || echo 000)"
+    [[ "${code}" == "200" ]] && { log_pass "Gateway is ready (all upstream services healthy)"; return; }
+    sleep 2
+  done
+
+  log_fail "Gateway did not become ready within ${WAIT_TIMEOUT_SECONDS}s (upstream gRPC services may still be starting)"
   exit 1
 }
 
@@ -364,7 +377,7 @@ main() {
 
   api_call POST /api/v1/auth/register \
     "{\"username\":\"${USER_USERNAME}\",\"password\":\"${user_password}\",\"email\":\"${user_email}\",\"phone_number\":\"0900000001\"}"
-  assert_equal "201" "${RESP_STATUS}" "POST /auth/register → 201"
+  assert_equal "201" "${RESP_STATUS}" "POST /auth/register -> 201"
   USER_ID="$(json_get user_id)"
   assert_not_empty "${USER_ID}" "Register returns user_id"
   log_info "Registered user: username=${USER_USERNAME} id=${USER_ID}"
@@ -372,7 +385,7 @@ main() {
   # 1b. Login as user
   api_call POST /api/v1/auth/login \
     "{\"identifier\":\"${USER_USERNAME}\",\"password\":\"${user_password}\"}"
-  assert_equal "200" "${RESP_STATUS}" "POST /auth/login (user) → 200"
+  assert_equal "200" "${RESP_STATUS}" "POST /auth/login (user) -> 200"
   USER_TOKEN="$(json_get token_pair.access_token)"
   assert_not_empty "${USER_TOKEN}" "Login returns access_token"
   log_info "User token acquired"
@@ -380,7 +393,7 @@ main() {
   # 1c. Login as manager
   api_call POST /api/v1/auth/login \
     "{\"identifier\":\"${MANAGER_USERNAME}\",\"password\":\"${MANAGER_PASSWORD}\"}"
-  assert_equal "200" "${RESP_STATUS}" "POST /auth/login (manager) → 200"
+  assert_equal "200" "${RESP_STATUS}" "POST /auth/login (manager) -> 200"
   MANAGER_TOKEN="$(json_get token_pair.access_token)"
   assert_not_empty "${MANAGER_TOKEN}" "Manager login returns access_token"
   log_info "Manager token acquired"
@@ -388,7 +401,7 @@ main() {
   # 1d. Login as admin
   api_call POST /api/v1/auth/login \
     "{\"identifier\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\"}"
-  assert_equal "200" "${RESP_STATUS}" "POST /auth/login (admin) → 200"
+  assert_equal "200" "${RESP_STATUS}" "POST /auth/login (admin) -> 200"
   ADMIN_TOKEN="$(json_get token_pair.access_token)"
   assert_not_empty "${ADMIN_TOKEN}" "Admin login returns access_token"
   log_info "Admin token acquired"
@@ -396,7 +409,7 @@ main() {
   # 1e. Duplicate registration → 409
   api_call POST /api/v1/auth/register \
     "{\"username\":\"${USER_USERNAME}\",\"password\":\"${user_password}\",\"email\":\"${user_email}\",\"phone_number\":\"0900000001\"}"
-  assert_equal "409" "${RESP_STATUS}" "POST /auth/register (duplicate) → 409"
+  assert_equal "409" "${RESP_STATUS}" "POST /auth/register (duplicate) -> 409"
 
   # ───────────────────────────────────────────────
   # Phase 2: User profile
@@ -404,18 +417,18 @@ main() {
   log_section "Phase 2: User Profile"
 
   api_call GET /api/v1/user/profile "" "${USER_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "GET /user/profile → 200"
+  assert_equal "200" "${RESP_STATUS}" "GET /user/profile -> 200"
   local profile_username
   profile_username="$(json_get user.username)"
   assert_equal "${USER_USERNAME}" "${profile_username}" "Profile username matches"
 
   api_call PATCH /api/v1/user/profile \
     '{"phone_number":"0911111111"}' "${USER_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "PATCH /user/profile → 200"
+  assert_equal "200" "${RESP_STATUS}" "PATCH /user/profile -> 200"
 
   # Protected route without token → 401
   api_call GET /api/v1/user/profile
-  assert_equal "401" "${RESP_STATUS}" "GET /user/profile (no token) → 401"
+  assert_equal "401" "${RESP_STATUS}" "GET /user/profile (no token) -> 401"
 
   # ───────────────────────────────────────────────
   # Phase 3: Book management
@@ -428,7 +441,7 @@ main() {
   api_call POST /api/v1/management/books \
     "{\"books_payload\":[{\"title\":\"E2E Book Alpha\",\"author\":\"E2E Author\",\"isbn\":\"${isbn1}\",\"category\":\"Test\",\"description\":\"E2E test book A\",\"quantity\":10},{\"title\":\"E2E Book Beta\",\"author\":\"E2E Author\",\"isbn\":\"${isbn2}\",\"category\":\"Test\",\"description\":\"E2E test book B\",\"quantity\":5}]}" \
     "${MANAGER_TOKEN}"
-  assert_equal "201" "${RESP_STATUS}" "POST /management/books → 201"
+  assert_equal "201" "${RESP_STATUS}" "POST /management/books -> 201"
   BOOK_ID_1="$(json_get created_books.0.id)"
   BOOK_ID_2="$(json_get created_books.1.id)"
   assert_not_empty "${BOOK_ID_1}" "Created book 1 has ID"
@@ -437,36 +450,36 @@ main() {
 
   # 3b. List books (public — no token needed)
   api_call GET /api/v1/books
-  assert_equal "200" "${RESP_STATUS}" "GET /books (public) → 200"
+  assert_equal "200" "${RESP_STATUS}" "GET /books (public) -> 200"
   local book_list_count
   book_list_count="$(json_get total_count)"
   assert_ge 1 "${book_list_count}" "Book list has at least 1 entry"
 
   # 3c. Get book by ID (public)
   api_call GET "/api/v1/books/${BOOK_ID_1}"
-  assert_equal "200" "${RESP_STATUS}" "GET /books/:id → 200"
+  assert_equal "200" "${RESP_STATUS}" "GET /books/:id -> 200"
   local got_book_id
   got_book_id="$(json_get book.id)"
   assert_equal "${BOOK_ID_1}" "${got_book_id}" "GET /books/:id returns correct book"
 
-  # 3d. Get non-existent book → 404
+  # 3d. Get non-existent book -> 404
   api_call GET "/api/v1/books/00000000-0000-0000-0000-000000000000"
-  assert_equal "404" "${RESP_STATUS}" "GET /books/non-existent → 404"
+  assert_equal "404" "${RESP_STATUS}" "GET /books/non-existent -> 404"
 
   # 3e. Update book title/author (manager)
   api_call PUT "/api/v1/management/books/${BOOK_ID_1}" \
     '{"title":"E2E Book Alpha (Updated)","author":"E2E Author v2"}' \
     "${MANAGER_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "PUT /management/books/:id → 200"
+  assert_equal "200" "${RESP_STATUS}" "PUT /management/books/:id -> 200"
 
   # 3f. Update book quantity (manager)
   api_call PATCH "/api/v1/management/books/${BOOK_ID_1}/quantity" \
     '{"change_amount":2}' "${MANAGER_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "PATCH /management/books/:id/quantity → 200"
+  assert_equal "200" "${RESP_STATUS}" "PATCH /management/books/:id/quantity -> 200"
 
   # 3g. Check book availability (manager)
   api_call GET "/api/v1/management/books/${BOOK_ID_1}/availability" "" "${MANAGER_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "GET /management/books/:id/availability → 200"
+  assert_equal "200" "${RESP_STATUS}" "GET /management/books/:id/availability -> 200"
   log_info "Book 1 availability: $(json_get available_quantity) available"
 
   # ───────────────────────────────────────────────
@@ -478,7 +491,7 @@ main() {
   api_call POST /api/v1/orders \
     "{\"book_ids\":[\"${BOOK_ID_1}\"],\"borrow_days\":7}" \
     "${USER_TOKEN}"
-  assert_equal "201" "${RESP_STATUS}" "POST /orders (order 1) → 201"
+  assert_equal "201" "${RESP_STATUS}" "POST /orders (order 1) -> 201"
   ORDER_ID="$(json_get order.id)"
   local order_status
   order_status="$(json_get order.status)"
@@ -490,21 +503,21 @@ main() {
   api_call POST /api/v1/orders \
     "{\"book_ids\":[\"${BOOK_ID_2}\"],\"borrow_days\":3}" \
     "${USER_TOKEN}"
-  assert_equal "201" "${RESP_STATUS}" "POST /orders (order 2) → 201"
+  assert_equal "201" "${RESP_STATUS}" "POST /orders (order 2) -> 201"
   CANCEL_ORDER_ID="$(json_get order.id)"
   assert_not_empty "${CANCEL_ORDER_ID}" "Order 2 has ID"
   log_info "Order 2 created: id=${CANCEL_ORDER_ID}"
 
   # 4c. List my orders
   api_call GET /api/v1/orders "" "${USER_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "GET /orders (list my orders) → 200"
+  assert_equal "200" "${RESP_STATUS}" "GET /orders (list my orders) -> 200"
   local my_order_count
   my_order_count="$(json_get total_count)"
   assert_ge 1 "${my_order_count}" "User has at least 1 order"
 
   # 4d. Get order by ID
   api_call GET "/api/v1/orders/${ORDER_ID}" "" "${USER_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "GET /orders/:id → 200"
+  assert_equal "200" "${RESP_STATUS}" "GET /orders/:id -> 200"
   local got_order_id
   got_order_id="$(json_get order.id)"
   assert_equal "${ORDER_ID}" "${got_order_id}" "GET /orders/:id returns correct order"
@@ -513,14 +526,14 @@ main() {
   api_call POST "/api/v1/orders/${CANCEL_ORDER_ID}/cancel" \
     '{"cancel_reason":"e2e test cancellation"}' \
     "${USER_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "POST /orders/:id/cancel → 200"
+  assert_equal "200" "${RESP_STATUS}" "POST /orders/:id/cancel -> 200"
   local cancel_status
   cancel_status="$(json_get order.status)"
   assert_equal "CANCELED" "${cancel_status}" "Cancelled order status is CANCELED"
 
   # 4f. Manager lists all orders
   api_call GET /api/v1/management/orders "" "${MANAGER_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "GET /management/orders → 200"
+  assert_equal "200" "${RESP_STATUS}" "GET /management/orders -> 200"
   local all_order_count
   all_order_count="$(json_get total_count)"
   assert_ge 1 "${all_order_count}" "System has at least 1 order"
@@ -528,7 +541,7 @@ main() {
   # 4g. Manager approves order 1
   api_call PATCH "/api/v1/management/orders/${ORDER_ID}/status" \
     '{"new_status":"APPROVED"}' "${MANAGER_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "PATCH /management/orders/:id/status (APPROVED) → 200"
+  assert_equal "200" "${RESP_STATUS}" "PATCH /management/orders/:id/status (APPROVED) -> 200"
   local approved_status
   approved_status="$(json_get order.status)"
   assert_equal "APPROVED" "${approved_status}" "Order 1 status is APPROVED"
@@ -536,7 +549,7 @@ main() {
   # 4h. Manager marks order 1 as BORROWED
   api_call PATCH "/api/v1/management/orders/${ORDER_ID}/status" \
     '{"new_status":"BORROWED","note":"collected at front desk"}' "${MANAGER_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "PATCH /management/orders/:id/status (BORROWED) → 200"
+  assert_equal "200" "${RESP_STATUS}" "PATCH /management/orders/:id/status (BORROWED) -> 200"
   local borrowed_status
   borrowed_status="$(json_get order.status)"
   assert_equal "BORROWED" "${borrowed_status}" "Order 1 status is BORROWED"
@@ -559,11 +572,11 @@ main() {
     -H "Content-Type: application/json" \
     -d '{this is not json}' \
     "${API_GATEWAY_URL}/api/v1/orders")"
-  assert_equal "400" "${RESP_STATUS}" "Invalid JSON body → 400"
+  assert_equal "400" "${RESP_STATUS}" "Invalid JSON body -> 400"
 
   # 5c. Missing required fields → 400
   api_call POST /api/v1/orders '{"borrow_days":7}' "${USER_TOKEN}"
-  assert_equal "400" "${RESP_STATUS}" "Missing book_ids in CreateOrder → 400"
+  assert_equal "400" "${RESP_STATUS}" "Missing book_ids in CreateOrder -> 400"
 
   # ───────────────────────────────────────────────
   # Phase 6: Role-Based Access Control
@@ -573,37 +586,37 @@ main() {
   # USER denied on management routes
   for path in /api/v1/management/users /api/v1/management/orders; do
     api_call GET "${path}" "" "${USER_TOKEN}"
-    assert_equal "403" "${RESP_STATUS}" "USER on ${path} → 403"
+    assert_equal "403" "${RESP_STATUS}" "USER on ${path} -> 403"
   done
 
   # USER denied on admin-only route
   api_call PATCH "/api/v1/admin/users/${USER_ID}/vip" \
     '{"is_vip":true}' "${USER_TOKEN}"
-  assert_equal "403" "${RESP_STATUS}" "USER on /admin/users/:id/vip → 403"
+  assert_equal "403" "${RESP_STATUS}" "USER on /admin/users/:id/vip -> 403"
 
   # MANAGER can access management routes
   for path in /api/v1/management/users /api/v1/management/orders; do
     api_call GET "${path}" "" "${MANAGER_TOKEN}"
-    assert_equal "200" "${RESP_STATUS}" "MANAGER on ${path} → 200"
+    assert_equal "200" "${RESP_STATUS}" "MANAGER on ${path} -> 200"
   done
 
   # MANAGER denied on admin-only route
   api_call PATCH "/api/v1/admin/users/${USER_ID}/vip" \
     '{"is_vip":true}' "${MANAGER_TOKEN}"
-  assert_equal "403" "${RESP_STATUS}" "MANAGER on /admin/users/:id/vip → 403"
+  assert_equal "403" "${RESP_STATUS}" "MANAGER on /admin/users/:id/vip -> 403"
 
   # ADMIN can access management routes
   api_call GET /api/v1/management/orders "" "${ADMIN_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "ADMIN on /management/orders → 200"
+  assert_equal "200" "${RESP_STATUS}" "ADMIN on /management/orders -> 200"
 
   # ADMIN can list users
   api_call GET /api/v1/management/users "" "${ADMIN_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "ADMIN on /management/users → 200"
+  assert_equal "200" "${RESP_STATUS}" "ADMIN on /management/users -> 200"
 
   # ADMIN can grant VIP status
   api_call PATCH "/api/v1/admin/users/${USER_ID}/vip" \
     '{"is_vip":true}' "${ADMIN_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "ADMIN grants VIP on /admin/users/:id/vip → 200"
+  assert_equal "200" "${RESP_STATUS}" "ADMIN grants VIP on /admin/users/:id/vip -> 200"
   log_info "VIP status granted to user ${USER_ID}"
 
   # ADMIN can delete users (DELETE body required)
@@ -616,7 +629,7 @@ main() {
   if [[ -n "${throwaway_id}" ]]; then
     api_call DELETE /api/v1/admin/users \
       "{\"user_ids\":[\"${throwaway_id}\"]}" "${ADMIN_TOKEN}"
-    assert_equal "204" "${RESP_STATUS}" "ADMIN DELETE /admin/users → 204"
+    assert_equal "204" "${RESP_STATUS}" "ADMIN DELETE /admin/users -> 204"
   fi
 
   # ───────────────────────────────────────────────
@@ -626,17 +639,17 @@ main() {
 
   # No token → 401
   api_call GET /api/v1/user/profile
-  assert_equal "401" "${RESP_STATUS}" "No token on protected route → 401"
+  assert_equal "401" "${RESP_STATUS}" "No token on protected route -> 401"
 
   # Fully invalid token string → 401
   api_call GET /api/v1/user/profile "" "this.is.not.a.valid.token"
-  assert_equal "401" "${RESP_STATUS}" "Invalid token string → 401"
+  assert_equal "401" "${RESP_STATUS}" "Invalid token string -> 401"
 
   # Malformed Authorization header (no 'Bearer' prefix) → 401
   RESP_STATUS="$(curl -sS -o "${RESP_BODY_FILE}" -w "%{http_code}" \
     -H "Authorization: notbearer ${USER_TOKEN}" \
     "${API_GATEWAY_URL}/api/v1/user/profile")"
-  assert_equal "401" "${RESP_STATUS}" "Malformed Authorization header → 401"
+  assert_equal "401" "${RESP_STATUS}" "Malformed Authorization header -> 401"
 
   # Tampered token: corrupt a character in the middle (not the last char,
   # which only carries padding bits in base64url and may be a no-op).
@@ -646,15 +659,15 @@ main() {
   [[ "${mid_char}" == "Z" ]] && replacement="a"
   local tampered_token="${USER_TOKEN:0:${mid_idx}}${replacement}${USER_TOKEN:$((mid_idx + 1))}"
   api_call GET /api/v1/user/profile "" "${tampered_token}"
-  assert_equal "401" "${RESP_STATUS}" "Tampered token (middle char) → 401"
+  assert_equal "401" "${RESP_STATUS}" "Tampered token (middle char) -> 401"
 
   # Public book route works without any token
   api_call GET /api/v1/books
-  assert_equal "200" "${RESP_STATUS}" "GET /books (public, no token) → 200"
+  assert_equal "200" "${RESP_STATUS}" "GET /books (public, no token) -> 200"
 
   # Valid token still works after all the above
   api_call GET /api/v1/user/profile "" "${USER_TOKEN}"
-  assert_equal "200" "${RESP_STATUS}" "Valid token still works after abuse attempts → 200"
+  assert_equal "200" "${RESP_STATUS}" "Valid token still works after abuse attempts -> 200"
 
   # ───────────────────────────────────────────────
   # Phase 8: Rate-limit check (soft — informational only)

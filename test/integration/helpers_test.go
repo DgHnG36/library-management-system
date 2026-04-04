@@ -50,28 +50,16 @@ func login(t *testing.T, identifier, password string) (accessToken, refreshToken
 
 func managerLogin(t *testing.T) string {
 	t.Helper()
-	username := os.Getenv("MANAGER_USERNAME")
-	if username == "" {
-		username = "lms-manager"
-	}
-	password := os.Getenv("MANAGER_PASSWORD")
-	if password == "" {
-		password = "manager@413"
-	}
+	username := "lms-manager"
+	password := "manager@413"
 	token, _ := login(t, username, password)
 	return token
 }
 
 func adminLogin(t *testing.T) string {
 	t.Helper()
-	username := os.Getenv("ADMIN_USERNAME")
-	if username == "" {
-		username = "lms-admin"
-	}
-	password := os.Getenv("ADMIN_PASSWORD")
-	if password == "" {
-		password = "@dm1n79"
-	}
+	username := "lms-admin"
+	password := "@dm1n79"
 	token, _ := login(t, username, password)
 	return token
 }

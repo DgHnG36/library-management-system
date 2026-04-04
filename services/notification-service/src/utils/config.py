@@ -7,8 +7,8 @@ class Config:
     RABBITMQ_QUEUE: str = os.getenv("RABBITMQ_QUEUE", "notification-queue")
     RABBITMQ_ROUTING_KEYS: list[str] = ["order.created", "order.canceled", "order.status_updated"]
 
-    USER_SVC_ADDR: str = os.getenv("USER_SVC_ADDR", "http://localhost:40041")
-    BOOK_SVC_ADDR: str = os.getenv("BOOK_SVC_ADDR", "http://localhost:40042")
+    GRPC_USER_SERVICE_ADDR: str = os.getenv("USER_SVC_ADDR", "localhost:40041")
+    GRPC_BOOK_SERVICE_ADDR: str = os.getenv("BOOK_SVC_ADDR", "localhost:40042")
     
     AWS_REGION: str = os.getenv("AWS_REGION", "ap-southeast-1")
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")

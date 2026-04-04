@@ -1,0 +1,54 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    project: lib-management-system
+    env: "dev"
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ["alertmanager:9093"]
+# rule_files:
+#   - "rules/*.yml"
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Gateway service exposes HTTP /metrics via promhttp.Handler()
+  - job_name: "lms-gateway-service"
+    metrics_path: "/metrics"
+    scheme: "http"
+    static_configs:
+      - targets: ["lms-gateway-service:8080"]
+        labels:
+          service: "lms-gateway-service"
+
+  # NOTE: lms-user-service, lms-book-service, lms-order-service are pure gRPC
+  # servers and do not expose an HTTP /metrics endpoint. To enable scraping,
+  # each service needs a dedicated HTTP listener (e.g., on a separate port)
+  # serving promhttp.Handler(). Uncomment after adding HTTP metrics servers.
+  #
+  # - job_name: "lms-user-service"
+  #   static_configs:
+  #     - targets: ["lms-user-service:9091"]
+  #       labels:
+  #         service: "lms-user-service"
+  #
+  # - job_name: "lms-book-service"
+  #   static_configs:
+  #     - targets: ["lms-book-service:9092"]
+  #       labels:
+  #         service: "lms-book-service"
+  #
+  # - job_name: "lms-order-service"
+  #   static_configs:
+  #     - targets: ["lms-order-service:9093"]
+  #       labels:
+  #         service: "lms-order-service"
+
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["node-exporter:9100"]

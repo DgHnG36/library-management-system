@@ -272,8 +272,9 @@ func (h *UserHandler) CheckConnection() (bool, error) {
 		return false, fmt.Errorf("user service client is not initialized")
 	}
 
-	if h.userServiceClient.GetConnection().GetState() != connectivity.Ready {
-		return false, fmt.Errorf("user service is not ready")
+	state := h.userServiceClient.GetConnection().GetState()
+	if state == connectivity.TransientFailure || state == connectivity.Shutdown {
+		return false, fmt.Errorf("user service is not ready (state=%s)", state)
 	}
 
 	return true, nil

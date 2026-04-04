@@ -19,7 +19,7 @@ class EmailService:
             self._client.send_email(Source=self._sender,
                                     Destination={"ToAddresses": [to_email]},
                                     Message={
-                                        "subject":{"Data": subject, "Charset": "UTF-8"},
+                                        "Subject": {"Data": subject, "Charset": "UTF-8"},
                                         "Body": {"Html": {"Data": body, "Charset": "UTF-8"}}
                                     })
             logger.info(f"Email sent to {to_email}", extra={"subject": subject})

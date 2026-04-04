@@ -283,8 +283,9 @@ func (h *BookHandler) CheckConnection() (bool, error) {
 		return false, fmt.Errorf("book service client is not initialized")
 	}
 
-	if h.bookServiceClient.GetConnection().GetState() != connectivity.Ready {
-		return false, fmt.Errorf("book service connection is not ready")
+	state := h.bookServiceClient.GetConnection().GetState()
+	if state == connectivity.TransientFailure || state == connectivity.Shutdown {
+		return false, fmt.Errorf("book service connection is not ready (state=%s)", state)
 	}
 
 	return true, nil
