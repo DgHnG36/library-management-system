@@ -1,6 +1,6 @@
 /**
  * STRESS TEST — Library Management System
- *
+ * DESCRIPTION
  * Goal: find the breaking point beyond the 500-VU load test baseline.
  * Strategy: push to 1500 VUs (3× load test peak) in stages, observe
  * where error rate and latency degrade unacceptably.
@@ -13,7 +13,7 @@
  *   - list_books p(95)  < 1 s
  *   - get_book p(95)    < 1 s
  *
- * Run:
+ * RUN:
  *   k6 run --env BASE_URL=http://localhost:8080 stress_test.js
  */
 
@@ -28,19 +28,19 @@ const RUN_ID = Date.now()
 /*  Custom metrics                                                       */
 /* ------------------------------------------------------------------ */
 
-const reqDuration          = new Trend('req_duration', true)
-const errorRate            = new Rate('error_rate')
-const successCount         = new Counter('success_count')
-const failedCount          = new Counter('failed_count')
+const reqDuration = new Trend('req_duration', true)
+const errorRate = new Rate('error_rate')
+const successCount = new Counter('success_count')
+const failedCount = new Counter('failed_count')
 
-const registerDuration     = new Trend('register_duration', true)
-const loginDuration        = new Trend('login_duration', true)
-const createOrderDuration  = new Trend('create_order_duration', true)
-const listBooksDuration    = new Trend('list_books_duration', true)
-const getBookDuration      = new Trend('get_book_duration', true)
+const registerDuration = new Trend('register_duration', true)
+const loginDuration = new Trend('login_duration', true)
+const createOrderDuration = new Trend('create_order_duration', true)
+const listBooksDuration = new Trend('list_books_duration', true)
+const getBookDuration = new Trend('get_book_duration', true)
 
-const authErrors           = new Counter('auth_errors')
-const createOrderErrors    = new Counter('create_order_errors')
+const authErrors = new Counter('auth_errors')
+const createOrderErrors = new Counter('create_order_errors')
 
 /* ------------------------------------------------------------------ */
 /*  Test options                                                        */
@@ -60,30 +60,30 @@ export const options = {
             startVUs: 0,
             stages: [
                 // Warm-up to load test baseline
-                { duration: '2m',  target: 100  },
-                { duration: '2m',  target: 300  },
-                { duration: '2m',  target: 500  },
-                { duration: '3m',  target: 500  }, // hold — confirm stable
+                { duration: '2m', target: 100 },
+                { duration: '2m', target: 300 },
+                { duration: '2m', target: 500 },
+                { duration: '3m', target: 500 }, // hold — confirm stable
 
                 // Push beyond load test
-                { duration: '2m',  target: 750  },
-                { duration: '3m',  target: 750  }, // hold — observe
+                { duration: '2m', target: 750 },
+                { duration: '3m', target: 750 }, // hold — observe
 
                 // Double the load
-                { duration: '2m',  target: 1000 },
-                { duration: '3m',  target: 1000 }, // hold — observe
+                { duration: '2m', target: 1000 },
+                { duration: '3m', target: 1000 }, // hold — observe
 
                 // 2.5×
-                { duration: '2m',  target: 1250 },
-                { duration: '3m',  target: 1250 }, // hold — observe
+                { duration: '2m', target: 1250 },
+                { duration: '3m', target: 1250 }, // hold — observe
 
                 // 3× — breaking point test
-                { duration: '2m',  target: 1500 },
-                { duration: '3m',  target: 1500 }, // hold — measure failure mode
+                { duration: '2m', target: 1500 },
+                { duration: '3m', target: 1500 }, // hold — measure failure mode
 
                 // Recovery — system should recover after load drops
-                { duration: '2m',  target: 500  },
-                { duration: '2m',  target: 0    },
+                { duration: '2m', target: 500 },
+                { duration: '2m', target: 0 },
             ],
             exec: 'stressFlow',
         },
@@ -93,23 +93,24 @@ export const options = {
         error_rate: ['rate<0.05'],
 
         // Latency degrades under stress — thresholds reflect expected slowdown
-        req_duration:         ['p(95)<5000'],
-        register_duration:    ['p(95)<5000'],
-        login_duration:       ['p(95)<5000'],
-        create_order_duration:['p(95)<3000'],
-        list_books_duration:  ['p(95)<1000'],
-        get_book_duration:    ['p(95)<1000'],
+        req_duration: ['p(95)<5000', 'p(99)<10000'],
+        register_duration: ['p(95)<7000', 'p(99)<10000'],
+        login_duration: ['p(95)<6000', 'p(99)<10000'],
+        create_order_duration: ['p(95)<500', 'p(99)<2000'],
+        list_books_duration: ['p(95)<100', 'p(99)<500'],
+        get_book_duration: ['p(95)<100', 'p(99)<500'],
 
         // Error counters
-        auth_errors:         ['count<500'],
-        create_order_errors: ['count<2000'],
+        auth_errors: ['count<50'],
+        create_order_errors: ['count<50'],
     },
 }
 
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                             */
-/* ------------------------------------------------------------------ */
-
+/**
+ * HELPER FUNCTIONS
+ * - jsonHeader: construct headers with optional auth token
+ *  - randomPhone: generate random phone number for registration
+ */
 function jsonHeader(token) {
     const h = { 'Content-Type': 'application/json' }
     if (token) h['Authorization'] = `Bearer ${token}`
@@ -120,11 +121,20 @@ function randomPhone() {
     return `09${Math.floor(10000000 + Math.random() * 89999999)}`
 }
 
+/**
+ * INTERNAL FUNCTIONS
+ * - registerUser: register a new user, return credentials
+ * - loginUser: login with given credentials, return access token
+ * - listBooks: fetch list of books, return array of book IDs
+ * - getBook: fetch details of a specific book by ID
+ * - createOrder: create an order for given book IDs and borrow days, return order ID
+ */
+
 function registerUser() {
-    const uid      = `${RUN_ID}_${__VU}_${__ITER}`
+    const uid = `${RUN_ID}_${__VU}_${__ITER}`
     const username = `stress_${uid}`
     const password = `stresspass_${__VU}`
-    const email    = `stress_${uid}@test.com`
+    const email = `stress_${uid}@test.com`
 
     const start = Date.now()
     let resp = http.post(
@@ -144,7 +154,7 @@ function registerUser() {
     reqDuration.add(Date.now() - start)
 
     const ok = check(resp, {
-        'register: status 201':  (r) => r.status === 201,
+        'register: status 201': (r) => r.status === 201,
         'register: has user_id': (r) => { try { return !!r.json('user_id') } catch (e) { return false } },
     })
     errorRate.add(!ok)
@@ -176,8 +186,8 @@ function loginUser(identifier, password) {
     reqDuration.add(Date.now() - start)
 
     const ok = check(resp, {
-        'login: status 200':        (r) => r.status === 200,
-        'login: has access_token':  (r) => { try { return !!r.json('token_pair.access_token') } catch (e) { return false } },
+        'login: status 200': (r) => r.status === 200,
+        'login: has access_token': (r) => { try { return !!r.json('token_pair.access_token') } catch (e) { return false } },
     })
     errorRate.add(!ok)
     if (!ok) {
@@ -191,7 +201,7 @@ function loginUser(identifier, password) {
 
 function listBooks(token) {
     const start = Date.now()
-    const resp  = http.get(`${BASE_URL}/api/v1/books`, { headers: jsonHeader(token) })
+    const resp = http.get(`${BASE_URL}/api/v1/books`, { headers: jsonHeader(token) })
     listBooksDuration.add(Date.now() - start)
     reqDuration.add(Date.now() - start)
 
@@ -204,7 +214,7 @@ function listBooks(token) {
 
 function getBook(bookID, token) {
     const start = Date.now()
-    const resp  = http.get(`${BASE_URL}/api/v1/books/${bookID}`, { headers: jsonHeader(token) })
+    const resp = http.get(`${BASE_URL}/api/v1/books/${bookID}`, { headers: jsonHeader(token) })
     getBookDuration.add(Date.now() - start)
     reqDuration.add(Date.now() - start)
 
@@ -215,7 +225,7 @@ function getBook(bookID, token) {
 
 function createOrder(token, bookIDs, borrowDays) {
     const start = Date.now()
-    const resp  = http.post(
+    const resp = http.post(
         `${BASE_URL}/api/v1/orders`,
         JSON.stringify({ book_ids: bookIDs, borrow_days: borrowDays }),
         { headers: jsonHeader(token) },
@@ -224,7 +234,7 @@ function createOrder(token, bookIDs, borrowDays) {
     reqDuration.add(Date.now() - start)
 
     const ok = check(resp, {
-        'create order: status 201':   (r) => r.status === 201,
+        'create order: status 201': (r) => r.status === 201,
         'create order: has order id': (r) => { try { return !!r.json('order.id') } catch (e) { return false } },
     })
     errorRate.add(!ok)
@@ -236,11 +246,10 @@ function createOrder(token, bookIDs, borrowDays) {
     successCount.add(1)
     return resp.json('order.id')
 }
-
-/* ------------------------------------------------------------------ */
-/*  setup — seed shared book catalog                                   */
-/* ------------------------------------------------------------------ */
-
+/**
+ * SETUP FUNCTION
+ * 
+ */
 export function setup() {
     let token = loginUser('lms-manager', 'manager@413')
     if (!token) {
@@ -250,14 +259,14 @@ export function setup() {
 
     const suffix = Date.now() % 100000000
     const payload = {
-        books_payload: Array.from({ length: 10 }, function(_, i) {
+        books_payload: Array.from({ length: 10 }, function (_, i) {
             return {
-                title:       `Stress Test Book ${suffix}-${i}`,
-                author:      'Stress Tester',
-                isbn:        `978-${suffix}-${i}`,
-                category:    'Testing',
+                title: `Stress Test Book ${suffix}-${i}`,
+                author: 'Stress Tester',
+                isbn: `978-${suffix}-${i}`,
+                category: 'Testing',
                 description: 'Seeded for stress test',
-                quantity:    2000,
+                quantity: 2000,
             }
         }),
     }
@@ -270,7 +279,7 @@ export function setup() {
 
     let bookIDs = []
     if (resp.status === 201) {
-        try { bookIDs = (resp.json('created_books') || []).map((b) => b.id).filter(Boolean) } catch (e) {}
+        try { bookIDs = (resp.json('created_books') || []).map((b) => b.id).filter(Boolean) } catch (e) { }
     } else {
         console.error(`[setup] seed books failed: ${resp.status} ${resp.body}`)
         bookIDs = listBooks(token).slice(0, 10)
@@ -280,11 +289,16 @@ export function setup() {
     return { bookIDs }
 }
 
-/* ------------------------------------------------------------------ */
-/*  Stress flow — simplified version of load test regular user flow   */
-/*  (skip profile fetch to reduce request count per iteration)        */
-/* ------------------------------------------------------------------ */
-
+/** 
+ * STRESS TEST FLOW
+ * - Register a new user (unique per VU/iteration)
+ * - Login to get access token
+ * - Browse books (get list of book IDs)
+ * - If books available:
+ *   - Get details of a random book
+ *   - Create an order for that book with random borrow days
+ * - Sleep for a short random duration before next iteration
+*/
 export function stressFlow(data) {
     const bookIDs = (data && data.bookIDs) || []
 
@@ -297,7 +311,7 @@ export function stressFlow(data) {
     if (!token) { sleep(1 + Math.random()); return }
 
     // Browse books
-    const ids  = listBooks(token)
+    const ids = listBooks(token)
     const pool = ids.length > 0 ? ids : bookIDs
 
     if (pool.length > 0) {
@@ -313,4 +327,4 @@ export function stressFlow(data) {
     sleep(1 + Math.random() * 2)
 }
 
-export default function () {}
+export default function () { }

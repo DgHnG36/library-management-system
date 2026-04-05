@@ -1,0 +1,446 @@
+{
+  "title": "LMS Monitoring Dashboard",
+  "description": "Library Management System — k6 performance + infrastructure observability",
+  "uid": "k6-lms-monitoring-dashboard",
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 2,
+  "refresh": "5s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "Test Type",
+        "multi": false,
+        "name": "testtype",
+        "options": [
+          { "selected": true, "text": "All", "value": "$__all" },
+          { "selected": false, "text": "smoke", "value": "smoke" },
+          { "selected": false, "text": "load", "value": "load" },
+          { "selected": false, "text": "stress", "value": "stress" }
+        ],
+        "query": "smoke,load,stress",
+        "type": "custom",
+        "description": "Filter percentile panel by k6 test type. Requires: k6 run --tag testtype=smoke|load|stress"
+      }
+    ]
+  },
+  "annotations": { "list": [] },
+  "panels": [
+
+    {
+      "collapsed": false,
+      "id": 1,
+      "title": "System Overview",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 }
+    },
+    {
+      "id": 2,
+      "title": "Total Registered (Session)",
+      "description": "Cumulative registration attempts within selected time range. k6 proxy metric — not a live DB count. For actual DB counts add a custom Prometheus Gauge to user-service.",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 1, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS-LMS}" },
+      "targets": [
+        {
+          "expr": "sum(increase(k6_register_duration_seconds_count[$__range]))",
+          "legendFormat": "Registered",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Active Users (VUs)",
+      "description": "Current number of concurrent virtual users actively executing iterations in k6.",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 1, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS-LMS}" },
+      "targets": [
+        {
+          "expr": "k6_vus",
+          "legendFormat": "Active VUs",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": { "mode": "fixed", "fixedColor": "green" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Inactive Users (Peak VUs \u2212 Active)",
+      "description": "Peak VUs reached this session minus current active VUs — proxy for VUs that have finished or are between iterations.",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 1, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS-LMS}" },
+      "targets": [
+        {
+          "expr": "max_over_time(k6_vus[$__range]) - k6_vus",
+          "legendFormat": "Inactive VUs",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": { "mode": "fixed", "fixedColor": "orange" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Error Rate",
+      "description": "k6 error_rate metric (0\u2013100 %). Green < 1 %, yellow < 5 %, red \u2265 5 %.",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 1, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS-LMS}" },
+      "targets": [
+        {
+          "expr": "k6_error_rate * 100",
+          "legendFormat": "Error %",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      }
+    },
+
+    {
+      "collapsed": false,
+      "id": 6,
+      "title": "HTTP Request Traffic",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 5, "w": 24, "h": 1 }
+    },
+    {
+      "id": 7,
+      "title": "Request Rate by Operation (req/s)",
+      "description": "Per-second throughput for each operation derived from k6 Trend metric observation counts. 'Total' is the raw k6 built-in counter across all routes.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 6, "w": 24, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS-LMS}" },
+      "targets": [
+        {
+          "expr": "rate(k6_login_duration_seconds_count[1m])",
+          "legendFormat": "Login"
+        },
+        {
+          "expr": "rate(k6_register_duration_seconds_count[1m])",
+          "legendFormat": "Register"
+        },
+        {
+          "expr": "rate(k6_list_books_duration_seconds_count[1m])",
+          "legendFormat": "List Books"
+        },
+        {
+          "expr": "rate(k6_get_book_duration_seconds_count[1m])",
+          "legendFormat": "Get Book"
+        },
+        {
+          "expr": "rate(k6_create_order_duration_seconds_count[1m])",
+          "legendFormat": "Create Order"
+        },
+        {
+          "expr": "sum(rate(k6_http_reqs_total[1m]))",
+          "legendFormat": "Total (all routes)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "lineWidth": 2, "fillOpacity": 5 }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Total (all routes)" },
+            "properties": [
+              { "id": "custom.lineWidth", "value": 1 },
+              { "id": "custom.lineStyle", "value": { "dash": [4, 4], "fill": "dash" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["mean", "max", "lastNotNull"]
+        }
+      }
+    },
+
+    {
+      "collapsed": false,
+      "id": 8,
+      "title": "Request Outcomes & Latency Percentiles",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 15, "w": 24, "h": 1 }
+    },
+    {
+      "id": 9,
+      "title": "Success vs Failed \u2014 Session Total",
+      "description": "Cumulative successful vs failed request counts (k6 custom success_count / failed_count counters) over the selected time window.",
+      "type": "piechart",
+      "gridPos": { "x": 0, "y": 16, "w": 8, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS-LMS}" },
+      "targets": [
+        {
+          "expr": "sum(increase(k6_success_count_total[$__range]))",
+          "legendFormat": "Success",
+          "instant": true
+        },
+        {
+          "expr": "sum(increase(k6_failed_count_total[$__range]))",
+          "legendFormat": "Failed",
+          "instant": true
+        }
+      ],
+      "options": {
+        "pieType": "pie",
+        "legend": { "displayMode": "table", "placement": "right" },
+        "tooltip": { "mode": "single" }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 0 },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Success" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Failed" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "title": "Latency Percentiles \u2014 p90 / p95 / p99",
+      "description": "Response time percentiles for all HTTP requests (overall) and per key operation. Use the 'Test Type' variable to filter by smoke / load / stress — requires k6 to be run with --tag testtype=<type>. Without the tag all test runs are aggregated.",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 16, "w": 16, "h": 9 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS-LMS}" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.90, sum(rate(k6_http_req_duration_seconds_bucket{testtype=~\"$testtype\"}[2m])) by (le))",
+          "legendFormat": "p90 overall"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(k6_http_req_duration_seconds_bucket{testtype=~\"$testtype\"}[2m])) by (le))",
+          "legendFormat": "p95 overall"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(k6_http_req_duration_seconds_bucket{testtype=~\"$testtype\"}[2m])) by (le))",
+          "legendFormat": "p99 overall"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(k6_login_duration_seconds_bucket[2m])) by (le))",
+          "legendFormat": "p95 login"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(k6_register_duration_seconds_bucket[2m])) by (le))",
+          "legendFormat": "p95 register"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(k6_create_order_duration_seconds_bucket[2m])) by (le))",
+          "legendFormat": "p95 create_order"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "lineWidth": 2 }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": "^p99.*" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "dash": [6, 3], "fill": "dash" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["lastNotNull", "max"]
+        }
+      }
+    },
+
+    {
+      "collapsed": false,
+      "id": 11,
+      "title": "Infrastructure \u2014 Node Exporter",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 25, "w": 24, "h": 1 }
+    },
+    {
+      "id": 12,
+      "title": "CPU Usage %",
+      "description": "Per-host CPU utilisation = 1 \u2212 idle. Collected by node-exporter (job=node-exporter).",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 26, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS-LMS}" },
+      "targets": [
+        {
+          "expr": "(1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\",job=\"node-exporter\"}[2m]))) * 100",
+          "legendFormat": "CPU \u2014 {{instance}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 90 }
+            ]
+          },
+          "custom": { "fillOpacity": 12, "lineWidth": 2 },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 13,
+      "title": "RAM Usage %",
+      "description": "Memory usage = (MemTotal \u2212 MemAvailable) / MemTotal \u00d7 100. Collected by node-exporter.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 26, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS-LMS}" },
+      "targets": [
+        {
+          "expr": "(1 - (node_memory_MemAvailable_bytes{job=\"node-exporter\"} / node_memory_MemTotal_bytes{job=\"node-exporter\"})) * 100",
+          "legendFormat": "RAM \u2014 {{instance}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 75 },
+              { "color": "red", "value": 90 }
+            ]
+          },
+          "custom": { "fillOpacity": 12, "lineWidth": 2 },
+          "color": { "mode": "thresholds" }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+
+    {
+      "collapsed": false,
+      "id": 14,
+      "title": "Logging",
+      "type": "row",
+      "gridPos": { "x": 0, "y": 34, "w": 24, "h": 1 }
+    },
+    {
+      "id": 15,
+      "title": "Logging \u2014 Setup Required",
+      "type": "text",
+      "gridPos": { "x": 0, "y": 35, "w": 24, "h": 7 },
+      "options": {
+        "mode": "markdown",
+        "content": "## Log viewing requires Loki\n\nLoki is not currently in the stack. Follow these steps to enable this panel.\n\n---\n\n### Step 1 \u2014 Add Loki + Promtail to `docker-compose.yaml`\n```yaml\nloki:\n  image: grafana/loki:2.9.4\n  ports: [\"3100:3100\"]\n  command: -config.file=/etc/loki/local-config.yaml\n  networks: [lms-network]\n\npromtail:\n  image: grafana/promtail:2.9.4\n  volumes:\n    - /var/lib/docker/containers:/var/lib/docker/containers:ro\n    - /var/run/docker.sock:/var/run/docker.sock\n  command: -config.file=/etc/promtail/config.yml\n  networks: [lms-network]\n```\n\n### Step 2 \u2014 Add Loki datasource in `monitoring/grafana/provisioning/datasources/ds.yaml`\n```yaml\n- name: Loki\n  type: loki\n  access: proxy\n  url: http://loki:3100\n  isDefault: false\n```\n\n### Step 3 \u2014 Replace this panel with a `logs` type panel\n\nSuggested LogQL queries:\n- `{container=~\"lms-gateway.*\"}` \u2014 gateway HTTP logs\n- `{container=~\"lms-user.*\"}` \u2014 user service gRPC logs\n- `{container=~\"lms-order.*\"}` \u2014 order service logs\n- `{container=~\"lms-book.*\"}` \u2014 book service logs\n- `{container=~\"lms-notification.*\"}` \u2014 notification service (Python) logs"
+      }
+    }
+
+  ],
+  "datasource": {
+    "type": "prometheus",
+    "uid": "${DS_PROMETHEUS-LMS}"
+  },
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS-LMS",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "label": "Prometheus-LMS"
+    }
+  ]
+}

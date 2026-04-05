@@ -97,23 +97,32 @@ export const options = {
         error_rate: ['rate<0.01'],
 
         // Mixed metric — covers all request types under 500 VUs
-        req_duration: ['p(95)<2000', 'p(99)<4000'],
+        // observed: p(95)=801ms, max=3830ms  → headroom ~25%
+        req_duration: ['p(95)<1000', 'p(99)<2000'],
 
         // Auth operations hit bcrypt + DB write: slow under high concurrency
-        register_duration: ['p(95)<2000', 'p(99)<4000'],
-        login_duration: ['p(95)<2000', 'p(99)<4000'],
+        // register observed: p(95)=1200ms, max=3250ms
+        // login    observed: p(95)=1260ms, max=3830ms
+        register_duration: ['p(95)<1500', 'p(99)<2500'],
+        login_duration: ['p(95)<1500', 'p(99)<2500'],
 
         // Order write path under 500 VUs
-        create_order_duration: ['p(50)<20', 'p(95)<1500', 'p(99)<3000'],
+        // observed: med=8ms, p(95)=22ms, max=163ms
+        create_order_duration: ['p(50)<15', 'p(95)<30', 'p(99)<200'],
 
         // Read operations — fast even under load
-        list_books_duration: ['p(50)<20', 'p(95)<500', 'p(99)<1000'],
-        get_book_duration: ['p(50)<20', 'p(95)<500', 'p(99)<1000'],
+        // list_books observed: med=3ms,  p(95)=24ms, max=203ms
+        // get_book   observed: med=2ms,  p(95)=13ms, max=171ms
+        list_books_duration: ['p(50)<10', 'p(95)<35', 'p(99)<200'],
+        get_book_duration: ['p(50)<5', 'p(95)<20', 'p(99)<100'],
 
-        // Manager paths — low concurrency
-        manager_login_duration: ['p(50)<20', 'p(95)<500', 'p(99)<1000'],
-        list_all_orders_duration: ['p(50)<20', 'p(95)<1000', 'p(99)<3000'],
-        update_order_status_duration: ['p(50)<20', 'p(95)<500', 'p(99)<1000'],
+        // Manager paths — low concurrency (login involves bcrypt)
+        // manager_login       observed: med=56ms,  p(95)=62ms,  max=415ms
+        // list_all_orders     observed: med=3ms,   p(95)=4ms,   max=22ms
+        // update_order_status observed: med=3ms,   p(95)=3.64ms, max=4ms
+        manager_login_duration: ['p(50)<80', 'p(95)<100', 'p(99)<500'],
+        list_all_orders_duration: ['p(50)<5', 'p(95)<10', 'p(99)<30'],
+        update_order_status_duration: ['p(50)<5', 'p(95)<7', 'p(99)<15'],
 
         // Error counters — allow ~1 % of total order volume for 500 VUs
         auth_errors: ['count<50'],
