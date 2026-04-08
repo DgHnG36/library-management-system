@@ -27,4 +27,3 @@ class UserClient:
 
     def close(self):
         self._channel.close()
-
