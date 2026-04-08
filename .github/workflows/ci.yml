@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 env:
-  GO_VERS: "1.25.6"
+  GO_VERS: "1.24"
   PYTHON_VERS: "3.12"
   GOLANGCI_VERS: "latest"
   REGISTRY: docker.io
@@ -27,12 +27,14 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERS }}
+          cache: false
 
       - name: Lint Go Code
         uses: golangci/golangci-lint-action@v6
         with:
           version: ${{ env.GOLANGCI_VERS }}
           working-directory: ./services/${{ matrix.service}}
+          args: --timeout=5m
 
       - name: Lint Python Code
         run: |
