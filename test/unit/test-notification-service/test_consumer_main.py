@@ -166,7 +166,7 @@ class TestNotificationConsumerMain(unittest.TestCase):
         module = load_main_module()
         consumer = module.NotificationConsumer()
 
-        user = SimpleNamespace(email="u@example.com", name="Alice")
+        user = SimpleNamespace(email="u@example.com", username="Alice")
         book1 = SimpleNamespace(title="Book A")
         book2 = SimpleNamespace(title="Book B")
 
@@ -204,7 +204,7 @@ class TestNotificationConsumerMain(unittest.TestCase):
         module = load_main_module()
         consumer = module.NotificationConsumer()
 
-        consumer.user_client.get_profile.return_value = SimpleNamespace(email="u@example.com", name="Bob")
+        consumer.user_client.get_profile.return_value = SimpleNamespace(email="u@example.com", username="Bob")
 
         consumer._handle_order_canceled({"user_id": "u1", "order_id": "o1"})
 
@@ -218,7 +218,7 @@ class TestNotificationConsumerMain(unittest.TestCase):
         module = load_main_module()
         consumer = module.NotificationConsumer()
 
-        consumer.user_client.get_profile.return_value = SimpleNamespace(email="", name="Bob")
+        consumer.user_client.get_profile.return_value = SimpleNamespace(email="", username="Bob")
 
         consumer._handle_order_canceled({"user_id": "u1", "order_id": "o1"})
 
@@ -228,7 +228,7 @@ class TestNotificationConsumerMain(unittest.TestCase):
         module = load_main_module()
         consumer = module.NotificationConsumer()
 
-        consumer.user_client.get_profile.return_value = SimpleNamespace(email="u@example.com", name="Bob")
+        consumer.user_client.get_profile.return_value = SimpleNamespace(email="u@example.com", username="Bob")
 
         consumer._handle_order_status_updated(
             {"user_id": "u1", "order_id": "o1", "new_status": "APPROVED"}
