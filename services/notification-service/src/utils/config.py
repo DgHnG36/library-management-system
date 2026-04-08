@@ -1,5 +1,6 @@
 import os
 
+
 class Config:
     PORT: str = os.getenv("PORT", "8000")
     SQS_QUEUE_URL: str = os.getenv("SQS_QUEUE_URL", "")
@@ -13,5 +14,6 @@ class Config:
     SES_SENDER_EMAIL: str = os.getenv("SES_SENDER_EMAIL", "noreply@yourdomain.com")
 
     ENV: str = os.getenv("ENV", "development")
+
 
 config = Config()

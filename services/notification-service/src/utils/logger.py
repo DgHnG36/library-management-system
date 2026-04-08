@@ -1,7 +1,8 @@
-import logging
 import json
+import logging
 import sys
 from datetime import datetime, timezone
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -10,11 +11,11 @@ class JsonFormatter(logging.Formatter):
             "level": record.levelname,
             "message": record.getMessage(),
         }
-        
+
         if record.exc_info:
             log_obj["exception"] = self.formatException(record.exc_info)
         return json.dumps(log_obj)
-    
+
 
 def get_logger(name: str = "notification-service") -> logging.Logger:
     logger = logging.getLogger(name)
@@ -23,7 +24,8 @@ def get_logger(name: str = "notification-service") -> logging.Logger:
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(JsonFormatter())
         logger.addHandler(handler)
-        
+
     return logger
+
 
 logger = get_logger()
