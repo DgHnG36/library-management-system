@@ -77,7 +77,7 @@ jobs:
   build:
     name: Build Docker Images
     needs: [lint, unit]
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -91,9 +91,30 @@ jobs:
           ]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build Docker Image for ${{ matrix.service }}
-        run: |
-          docker build -t lms/${{ matrix.service }}:ci-temp -f ./services/${{ matrix.service }}/Dockerfile .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./services/${{ matrix.service }}/Dockerfile
+          push: false
+          tags: lms/${{ matrix.service }}:ci-temp
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   integration:
     name: Run Integration Tests
