@@ -5,8 +5,12 @@ class Config:
     PORT: str = os.getenv("PORT", "8000")
     SQS_QUEUE_URL: str = os.getenv("SQS_QUEUE_URL", "")
 
-    GRPC_USER_SERVICE_ADDR: str = os.getenv("GRPC_USER_SERVICE_ADDR", os.getenv("USER_SVC_ADDR", "localhost:40041"))
-    GRPC_BOOK_SERVICE_ADDR: str = os.getenv("GRPC_BOOK_SERVICE_ADDR", os.getenv("BOOK_SVC_ADDR", "localhost:40042"))
+    GRPC_USER_SERVICE_ADDR: str = os.getenv(
+        "GRPC_USER_SERVICE_ADDR", os.getenv("USER_SVC_ADDR", "localhost:40041")
+    )
+    GRPC_BOOK_SERVICE_ADDR: str = os.getenv(
+        "GRPC_BOOK_SERVICE_ADDR", os.getenv("BOOK_SVC_ADDR", "localhost:40042")
+    )
 
     AWS_REGION: str = os.getenv("AWS_REGION", "ap-southeast-1")
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")

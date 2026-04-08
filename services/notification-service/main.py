@@ -29,7 +29,10 @@ class NotificationConsumer:
         logger.info("Connected to SQS", extra={"queue": config.SQS_QUEUE_URL})
 
     def process_message(self, message: dict) -> bool:
-        """Process a single SQS message. Returns True on success (caller deletes), False on failure."""
+        """Process a single SQS message.
+
+        Returns True on success (caller deletes), False on failure.
+        """
         try:
             event = json.loads(message["Body"])
             event_type = event.get("event_type")
@@ -142,7 +145,8 @@ class NotificationConsumer:
                         )
                     else:
                         logger.warning(
-                            "Message processing failed, will be requeued after visibility timeout"
+                            "Message processing failed, "
+                            "will be requeued after visibility timeout"
                         )
 
             except Exception as e:
@@ -160,7 +164,9 @@ class NotificationConsumer:
         self._running = True
         retry_delay = 5
 
-        logger.info("Notification service started (RabbitMQ mode), waiting for events...")
+        logger.info(
+            "Notification service started (RabbitMQ mode), waiting for events..."
+        )
 
         while self._running:
             try:
@@ -194,7 +200,10 @@ class NotificationConsumer:
                 )
                 logger.info(
                     "RabbitMQ consumer ready",
-                    extra={"exchange": config.RABBITMQ_EXCHANGE, "queue": config.RABBITMQ_QUEUE},
+                    extra={
+                        "exchange": config.RABBITMQ_EXCHANGE,
+                        "queue": config.RABBITMQ_QUEUE,
+                    },
                 )
                 channel.start_consuming()
 

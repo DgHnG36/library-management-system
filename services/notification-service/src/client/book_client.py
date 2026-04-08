@@ -5,8 +5,8 @@ import grpc
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared/python/v1"))
 
-from book import book_pb2, book_pb2_grpc
-from src.utils.logger import logger
+from book import book_pb2, book_pb2_grpc  # noqa: E402
+from src.utils.logger import logger  # noqa: E402
 
 
 class BookClient:

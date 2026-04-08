@@ -74,9 +74,10 @@ class EmailService:
             "OVERDUE": "overdue",
         }
 
+        mapped_status = status_map.get(new_status, new_status).lower()
         body = f"""
         <h2>Order Status Updated</h2>
         <p>Hello {username},</p>
-        <p>Your order <strong>{order_id}</strong> has been {status_map.get(new_status, new_status).lower()}.</p>
+        <p>Your order <strong>{order_id}</strong> has been {mapped_status}.</p>
         """
         self.send(to_email, "Your Order Status Has Been Updated", body)
