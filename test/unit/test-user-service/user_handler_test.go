@@ -8,6 +8,7 @@ import (
 
 	"github.com/DgHnG36/lib-management-system/services/user-service/internal/applications"
 	"github.com/DgHnG36/lib-management-system/services/user-service/internal/handlers"
+	"github.com/DgHnG36/lib-management-system/services/user-service/pkg/interceptor"
 	userv1 "github.com/DgHnG36/lib-management-system/shared/go/v1/user"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/codes"
@@ -23,9 +24,9 @@ func newHandlerSetup() (*handlers.UserHandler, *MockUserRepository) {
 	return h, repo
 }
 
-// ctxWithRole injects "X-User-Role" into a background context.
+// ctxWithRole injects X-User-Role into a background context using the typed key.
 func ctxWithRole(role string) context.Context {
-	return context.WithValue(context.Background(), "X-User-Role", role)
+	return context.WithValue(context.Background(), interceptor.ContextKeyUserRole, role)
 }
 
 // ─── TestUserHandler_Register ─────────────────────────────────────────────────
@@ -590,7 +591,7 @@ func TestUserHandler_RefreshToken(t *testing.T) {
 				refreshToken = tt.refreshToken
 			}
 
-			reqCtx := context.WithValue(ctx, "X-User-ID", userID)
+			reqCtx := context.WithValue(ctx, interceptor.ContextKeyUserID, userID)
 			resp, err := h.RefreshToken(reqCtx, &userv1.RefreshTokenRequest{
 				RefreshToken: refreshToken,
 			})

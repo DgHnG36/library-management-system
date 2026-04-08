@@ -8,6 +8,7 @@ import (
 	"github.com/DgHnG36/lib-management-system/services/book-service/internal/applications"
 	"github.com/DgHnG36/lib-management-system/services/book-service/internal/handlers"
 	"github.com/DgHnG36/lib-management-system/services/book-service/internal/models"
+	"github.com/DgHnG36/lib-management-system/services/book-service/pkg/interceptor"
 	"github.com/DgHnG36/lib-management-system/services/book-service/pkg/logger"
 	commonv1 "github.com/DgHnG36/lib-management-system/shared/go/v1"
 	bookv1 "github.com/DgHnG36/lib-management-system/shared/go/v1/book"
@@ -25,9 +26,9 @@ func newBookHandlerForTest() (*handlers.BookHandler, *MockBookRepository) {
 	return handler, repo
 }
 
-/* ctxWithRole injects "X-User-Role" into a background context. */
+/* ctxWithRole injects X-User-Role into a background context using the typed key. */
 func ctxWithRole(role string) context.Context {
-	return context.WithValue(context.Background(), "X-User-Role", role)
+	return context.WithValue(context.Background(), interceptor.ContextKeyUserRole, role)
 }
 
 /* ─── TestBookHandler_GetBook ─────────────────────────────────────────────── */
@@ -458,4 +459,3 @@ func TestBookHandler_UpdateBookQuantity(t *testing.T) {
 		})
 	}
 }
-

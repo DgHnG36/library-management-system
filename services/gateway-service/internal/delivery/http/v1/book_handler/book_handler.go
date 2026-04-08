@@ -3,6 +3,7 @@ package book_handler
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/internal/clients/book_service_client"
 	"github.com/DgHnG36/lib-management-system/services/gateway-service/internal/dto/book_service_dto"
@@ -209,7 +210,7 @@ func (h *BookHandler) DeleteBook(c *gin.Context) {
 		return
 	}
 
-	c.JSON(200, gin.H{"message": "book deleted successfully"})
+	c.AbortWithStatus(http.StatusNoContent)
 }
 
 func (h *BookHandler) CheckBookAvailability(c *gin.Context) {
