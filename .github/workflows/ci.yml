@@ -8,7 +8,7 @@ on:
 env:
   GO_VERS: "1.22"
   PYTHON_VERS: "3.12"
-  GOLANGCI_VERS: "v1.64.0"
+  GOLANGCI_VERS: "latest"
   REGISTRY: docker.io
   IMAGE_PREFIX: lms
 
