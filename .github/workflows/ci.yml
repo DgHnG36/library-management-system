@@ -103,12 +103,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Start docker-compose
+      - name: Start docker compose
         run: |
-          docker-compose -f ./test/docker-compose.test.yaml up -d --build
+          docker compose -f ./test/docker-compose.test.yaml up -d --build
       - name: Wait for services to be healthy
         run: |
-          docker-compose -f ./test/docker-compose.test.yaml wait
+          docker compose -f ./test/docker-compose.test.yaml wait
       - name: Run Go Integration Tests
         run: |
           cd ./test/integration
@@ -120,7 +120,7 @@ jobs:
       - name: Stop services
         if: always()
         run: |
-          docker-compose -f ./test/docker-compose.test.yaml down -v
+          docker compose -f ./test/docker-compose.test.yaml down -v
 
   e2e:
     name: Run End-to-End Tests
