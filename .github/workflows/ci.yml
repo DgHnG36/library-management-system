@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 env:
-  GO_VERS: "1.22"
+  GO_VERS: "1.25.6"
   PYTHON_VERS: "3.12"
   GOLANGCI_VERS: "latest"
   REGISTRY: docker.io
@@ -22,6 +22,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERS }}
 
       - name: Lint Go Code
         uses: golangci/golangci-lint-action@v6
