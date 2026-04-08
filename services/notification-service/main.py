@@ -4,6 +4,7 @@ import sys
 import time
 
 import boto3
+import pika
 
 from src.client.book_client import BookClient
 from src.client.user_client import UserClient
@@ -73,7 +74,7 @@ class NotificationConsumer:
 
         self.email_service.send_order_created(
             to_email=user.email,
-            username=user.name,
+            username=user.username,
             order_id=order_id,
             book_titles=book_titles,
             due_date=due_date,
@@ -89,7 +90,7 @@ class NotificationConsumer:
             return
 
         self.email_service.send_order_canceled(
-            to_email=user.email, username=user.name, order_id=order_id
+            to_email=user.email, username=user.username, order_id=order_id
         )
 
     def _handle_order_status_updated(self, payload: dict):
@@ -104,7 +105,7 @@ class NotificationConsumer:
 
         self.email_service.send_order_status_updated(
             to_email=user.email,
-            username=user.name,
+            username=user.username,
             order_id=order_id,
             new_status=new_status,
         )
@@ -155,6 +156,53 @@ class NotificationConsumer:
         self.book_client.close()
         logger.info("Notification service stopped")
 
+    def start_rabbitmq(self):
+        self._running = True
+        retry_delay = 5
+
+        logger.info("Notification service started (RabbitMQ mode), waiting for events...")
+
+        while self._running:
+            try:
+                params = pika.URLParameters(config.RABBITMQ_URL)
+                connection = pika.BlockingConnection(params)
+                channel = connection.channel()
+
+                channel.exchange_declare(
+                    exchange=config.RABBITMQ_EXCHANGE,
+                    exchange_type="topic",
+                    durable=True,
+                )
+                channel.queue_declare(queue=config.RABBITMQ_QUEUE, durable=True)
+                channel.queue_bind(
+                    exchange=config.RABBITMQ_EXCHANGE,
+                    queue=config.RABBITMQ_QUEUE,
+                    routing_key="order.*",
+                )
+                channel.basic_qos(prefetch_count=10)
+
+                def on_message(ch, method, properties, body):
+                    message = {"Body": body.decode("utf-8")}
+                    if self.process_message(message):
+                        ch.basic_ack(delivery_tag=method.delivery_tag)
+                    else:
+                        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+
+                channel.basic_consume(
+                    queue=config.RABBITMQ_QUEUE,
+                    on_message_callback=on_message,
+                )
+                logger.info(
+                    "RabbitMQ consumer ready",
+                    extra={"exchange": config.RABBITMQ_EXCHANGE, "queue": config.RABBITMQ_QUEUE},
+                )
+                channel.start_consuming()
+
+            except Exception as e:
+                logger.error(f"RabbitMQ consumer error: {e}")
+                if self._running:
+                    time.sleep(retry_delay)
+
 
 consumer = NotificationConsumer()
 
@@ -169,5 +217,8 @@ signal.signal(signal.SIGINT, handle_signal)
 signal.signal(signal.SIGTERM, handle_signal)
 
 if __name__ == "__main__":
-    consumer.connect()
-    consumer.start()
+    if config.RABBITMQ_URL:
+        consumer.start_rabbitmq()
+    else:
+        consumer.connect()
+        consumer.start()

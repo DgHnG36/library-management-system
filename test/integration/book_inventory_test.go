@@ -267,9 +267,9 @@ func TestBookInventory_EndToEnd(t *testing.T) {
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode != http.StatusNoContent {
 			body, _ := io.ReadAll(resp.Body)
-			t.Fatalf("Step 10: expected 200, got %d: %s", resp.StatusCode, string(body))
+			t.Fatalf("Step 10: expected 204, got %d: %s", resp.StatusCode, string(body))
 		}
 		t.Logf("book %s deleted", createdBookID)
 	})

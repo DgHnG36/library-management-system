@@ -41,7 +41,7 @@ func TestAuthFlow_EndToEnd(t *testing.T) {
 			"application/json",
 			bytes.NewReader(body),
 		)
-		assert.NoError(t, err, "register request failed: %v", err)
+		require.NoError(t, err, "register request failed: %v", err)
 		defer resp.Body.Close()
 
 		require.Equal(t, http.StatusCreated, resp.StatusCode, "expected %d, got %d", http.StatusCreated, resp.StatusCode)

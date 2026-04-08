@@ -700,13 +700,23 @@ main() {
   api_call POST /api/v1/management/books \
     "{\"books_payload\":[{\"title\":\"E2E Notif Book\",\"author\":\"E2E Author\",\"isbn\":\"${isbn_notif}\",\"category\":\"Test\",\"quantity\":3}]}" \
     "${MANAGER_TOKEN}"
-  local notif_book_id
-  notif_book_id="$(json_get created_books.0.id 2>/dev/null || echo "")"
+  local notif_book_id=""
+  if [[ "${RESP_STATUS}" == "201" ]]; then
+    notif_book_id="$(json_get created_books.0.id 2>/dev/null || echo "")"
+  else
+    log_info "Phase 9: book creation returned ${RESP_STATUS}, body: ${RESP_BODY}"
+  fi
 
   if [[ -n "${notif_book_id}" ]]; then
     api_call POST /api/v1/orders \
       "{\"book_ids\":[\"${notif_book_id}\"],\"borrow_days\":5}" "${USER_TOKEN}"
-    log_info "Triggered order.created event for notification service"
+    if [[ "${RESP_STATUS}" == "201" ]]; then
+      log_info "Triggered order.created event for notification service"
+    else
+      log_info "Phase 9: order creation returned ${RESP_STATUS}, body: ${RESP_BODY}"
+    fi
+  else
+    log_info "Phase 9: skipping order creation — no book ID available"
   fi
 
   local notif_deadline=$((SECONDS + 25))

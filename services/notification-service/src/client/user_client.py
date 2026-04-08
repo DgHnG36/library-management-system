@@ -5,8 +5,8 @@ import grpc
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared/python/v1"))
 
-from user import user_pb2, user_pb2_grpc  # noqa: E402
-from src.utils.logger import logger  # noqa: E402
+from user import user_pb2, user_pb2_grpc 
+from src.utils.logger import logger 
 
 
 class UserClient:
@@ -17,7 +17,7 @@ class UserClient:
     def get_profile(self, user_id: str) -> user_pb2.User | None:
         try:
             response = self._stub.GetProfile(
-                user_pb2.GetProfileRequest(user_id=user_id)
+                user_pb2.GetProfileRequest(id=user_id)
             )
             return response.user
         except grpc.RpcError as e:

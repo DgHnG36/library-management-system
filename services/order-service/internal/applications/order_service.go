@@ -122,6 +122,7 @@ func (s *OrderService) CreateOrder(ctx context.Context, userID string, bookIDs [
 			"order_id": order.ID,
 			"user_id":  userID,
 			"book_ids": bookIDs,
+			"due_date": order.DueDate.Format("2006-01-02"),
 		}); err != nil {
 			s.logger.Error("Failed to publish order.created event", err, logger.Fields{"order_id": order.ID})
 		}
