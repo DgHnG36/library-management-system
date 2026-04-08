@@ -48,7 +48,10 @@ class NotificationConsumer:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to process message: {e}", extra={"body": message.get("Body", "")})
+            logger.error(
+                f"Failed to process message: {e}",
+                extra={"body": message.get("Body", "")},
+            )
             return False
 
     def _handle_order_created(self, payload: dict):
@@ -73,7 +76,7 @@ class NotificationConsumer:
             username=user.name,
             order_id=order_id,
             book_titles=book_titles,
-            due_date=due_date
+            due_date=due_date,
         )
 
     def _handle_order_canceled(self, payload: dict):
@@ -86,9 +89,7 @@ class NotificationConsumer:
             return
 
         self.email_service.send_order_canceled(
-            to_email=user.email,
-            username=user.name,
-            order_id=order_id
+            to_email=user.email, username=user.name, order_id=order_id
         )
 
     def _handle_order_status_updated(self, payload: dict):
@@ -113,7 +114,7 @@ class NotificationConsumer:
         retry_delay = 5
 
         logger.info("Notification service started, waiting for events...")
-        print(fr"""
+        print(rf"""
              _   _  ___ _____ ___     ____  _____ ______     _____ ____ _____
             | \ | |/ _ \_   _|_ _|   / ___|| ____|  _ \ \   / /_ _/ ___| ____|
             |  \| | | | || |  | |____\___ \|  _| | |_) \ \ / / | | |   |  _|
@@ -139,7 +140,9 @@ class NotificationConsumer:
                             ReceiptHandle=message["ReceiptHandle"],
                         )
                     else:
-                        logger.warning("Message processing failed, will be requeued after visibility timeout")
+                        logger.warning(
+                            "Message processing failed, will be requeued after visibility timeout"
+                        )
 
             except Exception as e:
                 logger.error(f"SQS polling error: {e}")

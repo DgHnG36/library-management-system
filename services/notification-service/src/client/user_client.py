@@ -16,13 +16,18 @@ class UserClient:
 
     def get_profile(self, user_id: str) -> user_pb2.User | None:
         try:
-            response = self._stub.GetProfile(user_pb2.GetProfileRequest(user_id=user_id))
+            response = self._stub.GetProfile(
+                user_pb2.GetProfileRequest(user_id=user_id)
+            )
             return response.user
         except grpc.RpcError as e:
-            logger.error(f"Failed to get user: {e.details()}", extra={
-                "user_id": user_id,
-                "grpc_code": e.code().name,
-            })
+            logger.error(
+                f"Failed to get user: {e.details()}",
+                extra={
+                    "user_id": user_id,
+                    "grpc_code": e.code().name,
+                },
+            )
             return None
 
     def close(self):

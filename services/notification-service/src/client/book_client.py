@@ -19,10 +19,13 @@ class BookClient:
             response = self._stub.GetBook(book_pb2.GetBookRequest(book_id=book_id))
             return response.book
         except grpc.RpcError as e:
-            logger.error(f"Failed to get book: {e.details()}", extra={
-                "book_id": book_id,
-                "grpc_code": e.code().name,
-            })
+            logger.error(
+                f"Failed to get book: {e.details()}",
+                extra={
+                    "book_id": book_id,
+                    "grpc_code": e.code().name,
+                },
+            )
             return None
 
     def close(self):

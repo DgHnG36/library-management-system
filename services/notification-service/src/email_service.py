@@ -11,28 +11,40 @@ class EmailService:
             "ses",
             region_name=config.AWS_REGION,
             aws_access_key_id=config.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=config.AWS_SECRET_ACCESS_KEY
+            aws_secret_access_key=config.AWS_SECRET_ACCESS_KEY,
         )
 
         self._sender = config.SES_SENDER_EMAIL
 
     def send(self, to_email: str, subject: str, body: str) -> bool:
         try:
-            self._client.send_email(Source=self._sender,
-                                    Destination={"ToAddresses": [to_email]},
-                                    Message={
-                                        "Subject": {"Data": subject, "Charset": "UTF-8"},
-                                        "Body": {"Html": {"Data": body, "Charset": "UTF-8"}}
-                                    })
+            self._client.send_email(
+                Source=self._sender,
+                Destination={"ToAddresses": [to_email]},
+                Message={
+                    "Subject": {"Data": subject, "Charset": "UTF-8"},
+                    "Body": {"Html": {"Data": body, "Charset": "UTF-8"}},
+                },
+            )
             logger.info(f"Email sent to {to_email}", extra={"subject": subject})
             return True
         except ClientError as e:
-            logger.error(f"Failed to send email: {e.response['Error']['Message']}", extra={
-                "to": to_email,
-            })
+            logger.error(
+                f"Failed to send email: {e.response['Error']['Message']}",
+                extra={
+                    "to": to_email,
+                },
+            )
             return False
 
-    def send_order_created(self, to_email: str, username: str, order_id: str, book_titles: list[str], due_date: str):
+    def send_order_created(
+        self,
+        to_email: str,
+        username: str,
+        order_id: str,
+        book_titles: list[str],
+        due_date: str,
+    ):
         books_html = "".join(f"<li>{t}</li>" for t in book_titles)
         body = f"""
         <h2>Order Created</h2>
@@ -52,7 +64,9 @@ class EmailService:
         """
         self.send(to_email, "Your Order Has Been Canceled", body)
 
-    def send_order_status_updated(self, to_email: str, username: str, order_id: str, new_status: str):
+    def send_order_status_updated(
+        self, to_email: str, username: str, order_id: str, new_status: str
+    ):
         status_map = {
             "APPROVED": "approved",
             "BORROWED": "borrowed",
