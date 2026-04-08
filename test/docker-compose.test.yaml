@@ -1,61 +1,61 @@
 services:
 # Monitoring services
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - "../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml"
-      - "prometheus_data:/prometheus"
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--storage.tsdb.retention.time=24h"
-      - "--web.enable-remote-write-receiver"
-      - "--enable-feature=native-histograms"
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/ready"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - lms-network
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    volumes:
-      - "../monitoring/grafana/provisioning:/etc/grafana/provisioning"
-      - "grafana_data:/var/lib/grafana"
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - lms-network
-    depends_on:
-      - prometheus
-  node-exporter:
-    image: prom/node-exporter:latest
-    container_name: node-exporter
-    ports:
-      - "9100:9100"
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9100/metrics"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - lms-network
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: prometheus
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - "../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml"
+  #     - "prometheus_data:/prometheus"
+  #   command:
+  #     - "--config.file=/etc/prometheus/prometheus.yml"
+  #     - "--storage.tsdb.path=/prometheus"
+  #     - "--storage.tsdb.retention.time=24h"
+  #     - "--web.enable-remote-write-receiver"
+  #     - "--enable-feature=native-histograms"
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/ready"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   restart: unless-stopped
+  #   networks:
+  #     - lms-network
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: grafana
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - "../monitoring/grafana/provisioning:/etc/grafana/provisioning"
+  #     - "grafana_data:/var/lib/grafana"
+  #   environment:
+  #     GF_SECURITY_ADMIN_USER: admin
+  #     GF_SECURITY_ADMIN_PASSWORD: admin
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   restart: unless-stopped
+  #   networks:
+  #     - lms-network
+  #   depends_on:
+  #     - prometheus
+  # node-exporter:
+  #   image: prom/node-exporter:latest
+  #   container_name: node-exporter
+  #   ports:
+  #     - "9100:9100"
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9100/metrics"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   restart: unless-stopped
+  #   networks:
+  #     - lms-network
 
 # Main services
   postgres-user:
@@ -104,7 +104,7 @@ services:
     ports:
       - "15434:5432"
     volumes:
-     - "postgres_order_data:/var/lib/postgresql/data"
+      - "postgres_order_data:/var/lib/postgresql/data"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d lms_order_db"]
       interval: 5s
@@ -116,9 +116,9 @@ services:
     image: redis:7-alpine
     container_name: lms-redis
     ports:
-      - "63379:6379"
+      - "6379:6379"
     volumes:
-     - "redis_data:/data"
+      - "redis_data:/data"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -249,9 +249,9 @@ services:
       rabbitmq:
         condition: service_healthy
       user-service:
-        condition: service_started
+        condition: service_healthy
       book-service:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "ps -o comm= 1 | grep -q '^order-service$'"]
       interval: 10s
@@ -294,11 +294,17 @@ services:
       redis:
         condition: service_healthy
       user-service:
-        condition: service_started
+        condition: service_healthy
       book-service:
-        condition: service_started
+        condition: service_healthy
       order-service:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     restart: on-failure
     networks:
       - lms-network
@@ -324,9 +330,9 @@ services:
       rabbitmq:
         condition: service_healthy
       user-service:
-        condition: service_started
+        condition: service_healthy
       book-service:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "ps -o comm= 1 | grep -q '^python$'"]
       interval: 10s
@@ -337,15 +343,14 @@ services:
     networks:
       - lms-network
 volumes:
-# Volumes for monitoring data
-  prometheus_data:
-  grafana_data:
 # Volumes for service data persistence
   postgres_user_data:
   postgres_book_data:
   postgres_order_data:
   redis_data:
   rabbitmq_data:
+  # prometheus_data:
+  # grafana_data:
 networks:
   lms-network:
     driver: bridge

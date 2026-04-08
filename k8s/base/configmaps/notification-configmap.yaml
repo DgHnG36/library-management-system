@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lms-notification-config
+  labels:
+    app: notification
+    tier: worker
+data:
+  ENV: "production"
+  USER_SVC_ADDR: "lms-user-service:40041"
+  BOOK_SVC_ADDR: "lms-book-service:40042"
+  AWS_REGION: "ap-southeast-1"
+  SES_SENDER_EMAIL: "noreply@yourdomain.com" # REPLACE with actual sender
+  SQS_QUEUE_URL: "https://sqs.ap-southeast-1.amazonaws.com/<account-id>/notification-queue" # REPLACE with actual queue URL

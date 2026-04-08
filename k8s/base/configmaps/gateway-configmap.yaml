@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lms-gateway-config
+  labels:
+    app: gateway
+    tier: api
+data:
+  APP_ENV: "production"
+  SERVER_HOST: "0.0.0.0"
+  SERVER_PORT: "8080"
+  GRPC_USER_SERVICE_ADDR: "lms-user-service:40041"
+  GRPC_BOOK_SERVICE_ADDR: "lms-book-service:40042"
+  GRPC_ORDER_SERVICE_ADDR: "lms-order-service:40043"
+  JWT_ALGORITHM: "HS256"
+  JWT_EXP_MINS: "240m"
+  REDIS_ADDR: "lms-redis:6379"
+  REDIS_DB: "0"
+  RATE_LIMIT_MAX_REQUESTS: "50000"
+  RATE_LIMIT_WINDOW_SECONDS: "60"
+  CORS_MAX_AGE: "3600"

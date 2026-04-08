@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: lms-book-service
+  labels:
+    app: book
+    tier: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: book
+  ports:
+    - name: grpc
+      protocol: TCP
+      port: 40042
+      targetPort: 40042

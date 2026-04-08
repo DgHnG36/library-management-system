@@ -15,7 +15,7 @@ import (
 
 /*
  *TestNotificationFlow verifies that order lifecycle events do not crash the
- *notification service.  The notification service consumes RabbitMQ messages
+ *notification service.  The notification service polls AWS SQS for messages
  *and (in production) sends emails via AWS SES.  Since we cannot verify email
  *delivery in CI, this test confirms that:
  *  - Creating an order publishes an ORDER_CREATED event without error.
@@ -78,7 +78,7 @@ func TestNotificationFlow(t *testing.T) {
 		if orderID == "" {
 			t.Skip("no order from step 3")
 		}
-		// A short sleep gives the RabbitMQ consumer time to acknowledge the message.
+		// A short sleep gives the SQS consumer time to poll and acknowledge the message.
 		time.Sleep(2 * time.Second)
 	})
 

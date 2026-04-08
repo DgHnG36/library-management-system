@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lms-book-config
+  labels:
+    app: book
+    tier: backend
+data:
+  APP_ENV: "production"
+  SERVER_HOST: "0.0.0.0"
+  SERVER_PORT: "40042"
+  DB_HOST: "lms-postgres"
+  DB_PORT: "5432"
+  DB_USER: "postgres"
+  DB_NAME: "lms_book_db"
+  DB_SSL_MODE: "disable"
+  DB_MAX_OPEN_CONNS: "50"
+  DB_MAX_IDLE_CONNS: "50"
+  DB_CONN_MAX_LIFETIME: "5m"

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lms-postgres-init
+  labels:
+    app: postgres
+    tier: database
+data:
+  # Runs once on first pod startup (when /var/lib/postgresql/data is empty).
+  # Creates all application databases under the same postgres instance.
+  init.sql: |
+    CREATE DATABASE lms_user_db;
+    CREATE DATABASE lms_book_db;
+    CREATE DATABASE lms_order_db;

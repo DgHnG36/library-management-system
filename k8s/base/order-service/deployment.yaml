@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lms-order-service
+  labels:
+    app: order
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: order
+  template:
+    metadata:
+      labels:
+        app: order
+        tier: backend
+    spec:
+      containers:
+        - name: order-service
+          image: lms/order-service:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: grpc
+              containerPort: 40043
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: lms-order-config
+            - secretRef:
+                name: lms-order-secret
+          readinessProbe:
+            tcpSocket:
+              port: 40043
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 40043
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

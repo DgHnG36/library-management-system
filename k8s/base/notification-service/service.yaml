@@ -1,0 +1,15 @@
+# Notification service is an SQS long-polling consumer; it does not accept inbound connections.
+# This Service is headless and exists only for pod label selection (e.g. monitoring scraping).
+apiVersion: v1
+kind: Service
+metadata:
+  name: lms-notification-service
+  labels:
+    app: notification
+    tier: worker
+spec:
+  type: ClusterIP
+  clusterIP: None # headless — no load-balancing or VIP needed
+  selector:
+    app: notification
+  ports: []

@@ -1,0 +1,112 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: lms-dev
+
+resources:
+  - ../../base
+
+images:
+  - name: lms/gateway-service
+    newTag: dev
+  - name: lms/user-service
+    newTag: dev
+  - name: lms/book-service
+    newTag: dev
+  - name: lms/order-service
+    newTag: dev
+  - name: lms/notification-service
+    newTag: dev
+
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+    target:
+      kind: Deployment
+
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: lms-gateway-service
+      spec:
+        replicas: 1
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: lms-user-service
+      spec:
+        replicas: 1
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: lms-book-service
+      spec:
+        replicas: 1
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: lms-order-service
+      spec:
+        replicas: 1
+
+  - patch: |-
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: lms-postgres-secret
+      stringData:
+        POSTGRES_USER: "postgres"
+        POSTGRES_PASSWORD: "postgres"
+  - patch: |-
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: lms-rabbitmq-secret
+      stringData:
+        RABBITMQ_DEFAULT_USER: "guest"
+        RABBITMQ_DEFAULT_PASS: "guest"
+  - patch: |-
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: lms-gateway-secret
+      stringData:
+        JWT_SECRET: "dev-lms-secret-key"
+        REDIS_PASSWORD: ""
+  - patch: |-
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: lms-user-secret
+      stringData:
+        DB_PASSWORD: "postgres"
+        JWT_SECRET: "dev-lms-secret-key"
+  - patch: |-
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: lms-book-secret
+      stringData:
+        DB_PASSWORD: "postgres"
+  - patch: |-
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: lms-order-secret
+      stringData:
+        DB_PASSWORD: "postgres"
+        RABBITMQ_URL: "amqp://guest:guest@lms-rabbitmq:5672/"
+  - patch: |-
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: lms-notification-secret
+      stringData:
+        AWS_ACCESS_KEY_ID: "dev-key-placeholder"
+        AWS_SECRET_ACCESS_KEY: "dev-secret-placeholder"

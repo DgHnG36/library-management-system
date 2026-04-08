@@ -1,0 +1,106 @@
+name: CD LMS Pipeline
+
+on:
+  workflow_run:
+    workflows: ["CI LMS Pipeline"]
+    branches: [main]
+    types: [completed]
+
+env:
+  REGISTRY: docker.io
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout commit that triggered CI
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set image tag
+        id: vars
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: echo "TAG=${HEAD_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Install kustomize
+        run: |
+          curl -sLo kustomize.tar.gz \
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.1/kustomize_v5.4.1_linux_amd64.tar.gz"
+          tar xzf kustomize.tar.gz
+          sudo mv kustomize /usr/local/bin/kustomize
+
+      - name: Update image tags
+        env:
+          TAG: ${{ steps.vars.outputs.TAG }}
+        run: |
+          cd k8s/overlays/prod
+          kustomize edit set image \
+            lms/gateway-service=${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/lms-gateway-service:${TAG} \
+            lms/user-service=${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/lms-user-service:${TAG} \
+            lms/book-service=${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/lms-book-service:${TAG} \
+            lms/order-service=${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/lms-order-service:${TAG} \
+            lms/notification-service=${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/lms-notification-service:${TAG}
+
+      - name: Inject RDS credentials
+        run: |
+          sed -i "s|CHANGE_ME|${{ secrets.PROD_DB_PASSWORD }}|g" \
+            k8s/overlays/prod/rds-secret.yaml
+
+      - name: Inject prod secrets via kubectl
+        run: |
+          kubectl create namespace lms --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret generic lms-gateway-secret \
+            --from-literal=JWT_SECRET="${{ secrets.PROD_JWT_SECRET }}" \
+            --from-literal=REDIS_PASSWORD="${{ secrets.PROD_REDIS_PASSWORD }}" \
+            --namespace lms \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret generic lms-user-secret \
+            --from-literal=JWT_SECRET="${{ secrets.PROD_JWT_SECRET }}" \
+            --namespace lms \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret generic lms-order-secret \
+            --from-literal=RABBITMQ_URL="${{ secrets.PROD_RABBITMQ_URL }}" \
+            --namespace lms \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # notification-service dùng SQS — không cần RABBITMQ_URL
+          # Nếu EC2 có IAM Role, bỏ AWS_ACCESS_KEY_ID và AWS_SECRET_ACCESS_KEY
+          kubectl create secret generic lms-notification-secret \
+            --from-literal=AWS_ACCESS_KEY_ID="${{ secrets.PROD_AWS_ACCESS_KEY_ID }}" \
+            --from-literal=AWS_SECRET_ACCESS_KEY="${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}" \
+            --namespace lms \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply kustomization
+        run: kubectl apply -k k8s/overlays/prod
+
+      - name: Wait for rollout
+        run: |
+          for svc in gateway-service user-service book-service order-service notification-service; do
+            kubectl rollout status deployment/lms-${svc} -n lms --timeout=180s
+          done
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          for svc in gateway-service user-service book-service order-service notification-service; do
+            kubectl rollout undo deployment/lms-${svc} -n lms || true
+          done

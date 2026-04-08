@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lms-user-service
+  labels:
+    app: user
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: user
+  template:
+    metadata:
+      labels:
+        app: user
+        tier: backend
+    spec:
+      containers:
+        - name: user-service
+          image: lms/user-service:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: grpc
+              containerPort: 40041
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: lms-user-config
+            - secretRef:
+                name: lms-user-secret
+          readinessProbe:
+            tcpSocket:
+              port: 40041
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 40041
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

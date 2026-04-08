@@ -1,0 +1,87 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: lms
+
+resources:
+  - ../../base
+
+images:
+  - name: lms/gateway-service
+    newName: docker.io/DgHnG36/lms-gateway-service
+    newTag: "latest"
+  - name: lms/user-service
+    newName: docker.io/DgHnG36/lms-user-service
+    newTag: "latest"
+  - name: lms/book-service
+    newName: docker.io/DgHnG36/lms-book-service
+    newTag: "latest"
+  - name: lms/order-service
+    newName: docker.io/DgHnG36/lms-order-service
+    newTag: "latest"
+  - name: lms/notification-service
+    newName: docker.io/DgHnG36/lms-notification-service
+    newTag: "latest"
+
+patches:
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always
+    target:
+      kind: Deployment
+
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: lms-gateway-service
+      spec:
+        replicas: 3
+
+  - patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: lms-postgres
+      spec:
+        replicas: 0
+
+  # ── RDS endpoint — replace with your actual RDS endpoint ─────────────────────
+  # Find it: aws rds describe-db-instances --query 'DBInstances[0].Endpoint.Address'
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: lms-user-config
+      data:
+        DB_HOST: "db-instance-aws.cr6s8q0wa2an.ap-southeast-2.rds.amazonaws.com"
+        DB_SSL_MODE: "require"
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: lms-book-config
+      data:
+        DB_HOST: "db-instance-aws.cr6s8q0wa2an.ap-southeast-2.rds.amazonaws.com"
+        DB_SSL_MODE: "require"
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: lms-order-config
+      data:
+        DB_HOST: "db-instance-aws.cr6s8q0wa2an.ap-southeast-2.rds.amazonaws.com"
+        DB_SSL_MODE: "require"
+
+  # ── SQS endpoint — replace with actual queue URL ──────────────────────────
+  # Find it: aws sqs get-queue-url --queue-name notification-queue
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: lms-notification-config
+      data:
+        SQS_QUEUE_URL: "https://sqs.ap-southeast-2.amazonaws.com/279319515378/notification-queue"
+
+  - path: rds-secret.yaml

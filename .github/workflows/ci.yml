@@ -1,0 +1,184 @@
+name: CI LMS Pipeline
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  GO_VERS: 1.22
+  PYTHON_VERS: 3.12
+  REGISTRY: docker.io
+  IMAGE_PREFIX: lms
+
+jobs:
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [gateway-service, user-service, book-service, order-service]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint Go Code
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: ${{ env.GO_VERS }}
+          working-directory: ./services/${{ matrix.service}}
+
+      - name: Lint Python Code
+        run: |
+          pip install flake8
+          cd services/notification-service
+          flake8 . --count --max-line-length=120
+          black . --check
+
+  unit:
+    name: Run Unit Tests
+    needs: lint
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [gateway-service, user-service, book-service, order-service]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Unit Tests in Gateway service, User service, Book service and Order service
+        run: |
+          cd ./test/unit/test-${{ matrix.service }}
+          go test -v -coverprofile=test-${{ matrix.service }}-coverage.out ./...
+
+      - name: Run Unit Tests in Notification service
+        run: |
+          pip install -r services/notification-service/requirements.txt
+          pip install pytest pytest-cov pytest-asyncio
+          pytest ./test/unit/test-notification-service/ -v --cov=./services/notification-service --cov-report=xml:./services/notification-service/coverage.xml
+
+      - name: Upload Code Coverage Report
+        if: always()
+        uses: codecov/codecov-action@v3
+        with:
+          files: |
+            ./services/gateway-service/coverage.out
+            ./services/user-service/coverage.out
+            ./services/book-service/coverage.out
+            ./services/order-service/coverage.out
+            ./services/notification-service/coverage.xml
+
+  build:
+    name: Build Docker Images
+    needs: [lint, unit]
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          [
+            gateway-service,
+            user-service,
+            book-service,
+            order-service,
+            notification-service,
+          ]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker Image for ${{ matrix.service }}
+        run: |
+          docker build -t lms/${{ matrix.service }}:ci-temp -f ./services/${{ matrix.service }}/Dockerfile .
+
+  integration:
+    name: Run Integration Tests
+    needs: [unit, build]
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start docker-compose
+        run: |
+          docker-compose -f ./test/docker-compose.test.yaml up -d --build
+      - name: Wait for services to be healthy
+        run: |
+          docker-compose -f ./test/docker-compose.test.yaml wait
+      - name: Run Go Integration Tests
+        run: |
+          cd ./test/integration
+          go test -v ./...
+      - name: Run Python Integration Tests
+        run: |
+          pip install -r requirements.txt
+          pytest ./test/integration -v
+      - name: Stop services
+        if: always()
+        run: |
+          docker-compose -f ./test/docker-compose.test.yaml down -v
+
+  e2e:
+    name: Run End-to-End Tests
+    needs: integration
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run End-to-End Tests
+        run: |
+          cd ./test/e2e
+          bash full_workflow_test.sh
+
+  security:
+    name: Run Security Scan
+    needs: e2e
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          [
+            gateway-service,
+            user-service,
+            book-service,
+            order-service,
+            notification-service,
+          ]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan ${{ matrix.service }} image with Trivy
+        uses: aquasecurity/trivy-action@v0.20.0
+        with:
+          image-ref: lms/${{ matrix.service }}:ci-temp
+
+  push-images:
+    name: Push Docker Images to Docker Hub
+    needs: security
+    # Only push on merges to main, not on PRs
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          [
+            gateway-service,
+            user-service,
+            book-service,
+            order-service,
+            notification-service,
+          ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+
+      - name: Build and push ${{ matrix.service }}
+        run: |
+          TAG="${GITHUB_SHA::7}"
+          docker build \
+            -t docker.io/${{ secrets.DOCKERHUB_USERNAME }}/lms-${{ matrix.service }}:${TAG} \
+            -f ./services/${{ matrix.service }}/Dockerfile .
+          docker push docker.io/${{ secrets.DOCKERHUB_USERNAME }}/lms-${{ matrix.service }}:${TAG}

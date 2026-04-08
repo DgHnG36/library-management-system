@@ -3,8 +3,7 @@ import signal
 import sys
 import time
 
-import pika
-import pika.exceptions
+import boto3
 
 from src.client.book_client import BookClient
 from src.client.user_client import UserClient
@@ -17,49 +16,25 @@ class NotificationConsumer:
         self.email_service = EmailService()
         self.user_client = UserClient(config.GRPC_USER_SERVICE_ADDR)
         self.book_client = BookClient(config.GRPC_BOOK_SERVICE_ADDR)
-        self._connection = None
-        self._channel = None
-    
+        self._sqs = None
+        self._running = False
+
     def connect(self):
-        params = pika.URLParameters(config.RABBITMQ_URL)
-        params.heartbeat = 60
-        params.blocked_connection_timeout = 300
-        
-        self._connection = pika.BlockingConnection(params)
-        self._channel = self._connection.channel()
-        
-        self._channel.exchange_declare(
-            exchange=config.RABBITMQ_EXCHANGE,
-            exchange_type="topic",
-            durable=True
+        self._sqs = boto3.client(
+            "sqs",
+            region_name=config.AWS_REGION,
         )
-        
-        self._channel.queue_declare(
-            queue=config.RABBITMQ_QUEUE,
-            durable=True
-        )
-        
-        for routing_key in config.RABBITMQ_ROUTING_KEYS:
-            self._channel.queue_bind(
-                exchange=config.RABBITMQ_EXCHANGE,
-                queue=config.RABBITMQ_QUEUE,
-                routing_key=routing_key
-            )
-            
-        self._channel.basic_qos(prefetch_count=1)
-        logger.info("Connect to RabbitMQ successfully", extra={
-            "exchange": config.RABBITMQ_EXCHANGE,
-            "queue": config.RABBITMQ_QUEUE,
-        })
-        
-    def on_message(self, channel, method, properties, body):
+        logger.info("Connected to SQS", extra={"queue": config.SQS_QUEUE_URL})
+
+    def process_message(self, message: dict) -> bool:
+        """Process a single SQS message. Returns True on success (caller deletes), False on failure."""
         try:
-            event = json.loads(body)
+            event = json.loads(message["Body"])
             event_type = event.get("event_type")
             payload = event.get("payload", {})
-            
+
             logger.info(f"Received event: {event_type}", extra={"payload": payload})
-            
+
             if event_type == "order.created":
                 self._handle_order_created(payload)
             elif event_type == "order.canceled":
@@ -68,12 +43,12 @@ class NotificationConsumer:
                 self._handle_order_status_updated(payload)
             else:
                 logger.warning(f"Unknown event type {event_type}")
-                
-            channel.basic_ack(delivery_tag=method.delivery_tag)
-            
+
+            return True
+
         except Exception as e:
-            logger.error(f"Failed to process message: {e}", extra={"body": body.decode()})
-            channel.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+            logger.error(f"Failed to process message: {e}", extra={"body": message.get("Body", "")})
+            return False
         
     def _handle_order_created(self, payload: dict):
         user_id = payload.get("user_id")
@@ -133,51 +108,62 @@ class NotificationConsumer:
         )
         
     def start(self):
+        self._running = True
         retry_delay = 5
-        
-        while True:
-            try:    
-                self.connect()
-                self._channel.basic_consume(
-                    queue=config.RABBITMQ_QUEUE,
-                    on_message_callback=self.on_message
+
+        logger.info("Notification service started, waiting for events...")
+        print(fr"""
+             _   _  ___ _____ ___     ____  _____ ______     _____ ____ _____
+            | \ | |/ _ \_   _|_ _|   / ___|| ____|  _ \ \   / /_ _/ ___| ____|
+            |  \| | | | || |  | |____\___ \|  _| | |_) \ \ / / | | |   |  _|
+            | |\  | |_| || |  | |_____|__) | |___|  _ < \ V /  | | |___| |___
+            |_| \_|\___/ |_| |___|   |____/|_____|_| \_\ \_/  |___\____|_____|
+                        Notification Service is running...
+                        Port: {config.PORT}
+          """)
+
+        while self._running:
+            try:
+                response = self._sqs.receive_message(
+                    QueueUrl=config.SQS_QUEUE_URL,
+                    MaxNumberOfMessages=10,
+                    WaitTimeSeconds=20,
+                    VisibilityTimeout=60,
                 )
-                logger.info("Notification service started, waiting for events...")
-                print(fr"""
-                     _   _  ___ _____ ___     ____  _____ ______     _____ ____ _____ 
-                    | \ | |/ _ \_   _|_ _|   / ___|| ____|  _ \ \   / /_ _/ ___| ____|
-                    |  \| | | | || |  | |____\___ \|  _| | |_) \ \ / / | | |   |  _|  
-                    | |\  | |_| || |  | |_____|__) | |___|  _ < \ V /  | | |___| |___ 
-                    |_| \_|\___/ |_| |___|   |____/|_____|_| \_\ \_/  |___\____|_____|
-                                Notification Service is running...
-                                Port: {config.PORT}
-                      """)
-                self._channel.start_consuming()
-            except pika.exceptions.AMQPConnectionError as e:
-                logger.error(f"RabbitMQ connection lost, retrying in {retry_delay}s: {e}")
-                time.sleep(retry_delay)
-            except KeyboardInterrupt:
-                logger.info("Shutting down notification service...")
-                self._shutdown()
-                break
-            
+
+                for message in response.get("Messages", []):
+                    if self.process_message(message):
+                        self._sqs.delete_message(
+                            QueueUrl=config.SQS_QUEUE_URL,
+                            ReceiptHandle=message["ReceiptHandle"],
+                        )
+                    else:
+                        logger.warning("Message processing failed, will be requeued after visibility timeout")
+
+            except Exception as e:
+                logger.error(f"SQS polling error: {e}")
+                if self._running:
+                    time.sleep(retry_delay)
+
     def _shutdown(self):
-        if self._channel and self._channel.is_open:
-            self._channel.stop_consuming()
-        if self._connection and self._connection.is_open:
-            self._connection.close()
+        self._running = False
         self.user_client.close()
         self.book_client.close()
         logger.info("Notification service stopped")
 
+
 consumer = NotificationConsumer()
+
+
 def handle_signal(sig, frame):
     logger.info(f"Received signal {sig}, shutting down...")
     consumer._shutdown()
     sys.exit(0)
-    
+
+
 signal.signal(signal.SIGINT, handle_signal)
 signal.signal(signal.SIGTERM, handle_signal)
 
 if __name__ == "__main__":
+    consumer.connect()
     consumer.start()

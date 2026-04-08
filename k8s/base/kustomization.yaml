@@ -1,0 +1,59 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # Service and deployment
+  - gateway-service/deployment.yaml
+  - gateway-service/service.yaml
+  - user-service/deployment.yaml
+  - user-service/service.yaml
+  - book-service/deployment.yaml
+  - book-service/service.yaml
+  - order-service/deployment.yaml
+  - order-service/service.yaml
+  - notification-service/deployment.yaml
+  - notification-service/service.yaml
+  # Databases and message broker
+  - redis/deployment.yaml
+  - redis/service.yaml
+  - postgres/statefulset.yaml
+  - postgres/service.yaml
+  - rabbitmq/statefulset.yaml
+  - rabbitmq/service.yaml
+  # Ingress
+  - ingress.yml
+  # ConfigMaps
+  - configmaps/gateway-configmap.yaml
+  - configmaps/user-configmap.yaml
+  - configmaps/book-configmap.yaml
+  - configmaps/order-configmap.yaml
+  - configmaps/notification-configmap.yaml
+  - configmaps/postgres-configmap.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+secretGenerator:
+  - name: lms-gateway-secret
+    envs:
+      - secrets/gateway.env
+  - name: lms-user-secret
+    envs:
+      - secrets/user.env
+  - name: lms-book-secret
+    envs:
+      - secrets/book.env
+  - name: lms-order-secret
+    envs:
+      - secrets/order.env
+  - name: lms-notification-secret
+    envs:
+      - secrets/notification.env
+  - name: lms-redis-secret
+    envs:
+      - secrets/redis.env
+  - name: lms-postgres-secret
+    envs:
+      - secrets/postgres.env
+  - name: lms-rabbitmq-secret
+    envs:
+      - secrets/rabbitmq.env

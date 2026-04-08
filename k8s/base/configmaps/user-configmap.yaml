@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lms-user-config
+  labels:
+    app: user
+    tier: backend
+data:
+  APP_ENV: "production"
+  SERVER_HOST: "0.0.0.0"
+  SERVER_PORT: "40041"
+  DB_HOST: "lms-postgres"
+  DB_PORT: "5432"
+  DB_USER: "postgres"
+  DB_NAME: "lms_user_db"
+  DB_SSL_MODE: "disable"
+  DB_MAX_OPEN_CONNS: "100"
+  DB_MAX_IDLE_CONNS: "100"
+  DB_CONN_MAX_LIFETIME: "5m"
+  JWT_ALGORITHM: "HS256"
+  JWT_EXP_MINS: "240m"

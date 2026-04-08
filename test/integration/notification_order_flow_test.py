@@ -18,29 +18,26 @@ import sys
 import types
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 SERVICE_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "services", "notification-service")
+    os.path.join(os.path.dirname(__file__), "..", "..", "services", "notification-service")
 )
 MAIN_FILE = os.path.join(SERVICE_DIR, "main.py")
 SRC_DIR = os.path.join(SERVICE_DIR, "src")
 
 
 # ---------------------------------------------------------------------------
-# Fake infrastructure identical to test_consumer_main.py so this file is
-# completely self-contained and can be run in isolation.
+# Fake infrastructure — completely self-contained, no real AWS/SQS calls.
 # ---------------------------------------------------------------------------
 
 class FakeConfig:
     PORT = "8000"
-    RABBITMQ_URL = "amqp://guest:guest@localhost:5672/"
-    RABBITMQ_EXCHANGE = "order-events"
-    RABBITMQ_QUEUE = "notification-queue"
-    RABBITMQ_ROUTING_KEYS = ["order.created", "order.canceled", "order.status_updated"]
+    SQS_QUEUE_URL = "https://sqs.ap-southeast-1.amazonaws.com/123456789/notification-queue"
+    AWS_REGION = "ap-southeast-1"
     GRPC_USER_SERVICE_ADDR = "localhost:40041"
     GRPC_BOOK_SERVICE_ADDR = "localhost:40042"
 
@@ -66,27 +63,10 @@ class FakeBookClient:
         self.close = MagicMock()
 
 
-class FakeURLParameters:
-    def __init__(self, url):
-        self.url = url
-        self.heartbeat = None
-        self.blocked_connection_timeout = None
-
-
-class FakeBlockingConnection:
-    def __init__(self, params):
-        self._channel = MagicMock()
-        self.is_open = True
-
-    def channel(self):
-        return self._channel
-
-    def close(self):
-        self.is_open = False
-
-
-class FakeAMQPConnectionError(Exception):
-    pass
+class FakeSQSClient:
+    def __init__(self):
+        self.receive_message = MagicMock(return_value={"Messages": []})
+        self.delete_message = MagicMock()
 
 
 def _load_consumer_module():
@@ -115,12 +95,9 @@ def _load_consumer_module():
     logger_module = types.ModuleType("src.utils.logger")
     logger_module.logger = MagicMock()
 
-    pika_module = types.ModuleType("pika")
-    pika_module.URLParameters = FakeURLParameters
-    pika_module.BlockingConnection = FakeBlockingConnection
-
-    pika_exceptions_module = types.ModuleType("pika.exceptions")
-    pika_exceptions_module.AMQPConnectionError = FakeAMQPConnectionError
+    fake_sqs_instance = FakeSQSClient()
+    fake_boto3 = types.ModuleType("boto3")
+    fake_boto3.client = MagicMock(return_value=fake_sqs_instance)
 
     module_name = "notification_order_flow_main"
     sys.modules.pop(module_name, None)
@@ -136,8 +113,7 @@ def _load_consumer_module():
             "src.client.book_client": book_client_module,
             "src.utils.config": config_module,
             "src.utils.logger": logger_module,
-            "pika": pika_module,
-            "pika.exceptions": pika_exceptions_module,
+            "boto3": fake_boto3,
         },
     ):
         spec = importlib.util.spec_from_file_location(module_name, MAIN_FILE)
@@ -154,14 +130,12 @@ def _make_consumer():
     return module.NotificationConsumer()
 
 
-def _msg(event_type: str, payload: dict) -> bytes:
-    return json.dumps({"event_type": event_type, "payload": payload}).encode()
-
-
-def _channel_method(tag: int):
-    channel = MagicMock()
-    method = SimpleNamespace(delivery_tag=tag)
-    return channel, method
+def _msg(event_type: str, payload: dict, receipt_handle: str = "fake-receipt") -> dict:
+    """Build a fake SQS message dict."""
+    return {
+        "Body": json.dumps({"event_type": event_type, "payload": payload}),
+        "ReceiptHandle": receipt_handle,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +154,6 @@ class TestOrderHappyPath(unittest.TestCase):
         self.consumer.book_client.get_book.side_effect = [self.book1, self.book2]
 
     def test_order_created_event_sends_email_with_all_books(self):
-        channel, method = _channel_method(1)
         payload = {
             "user_id": "u-1",
             "order_id": "ord-1",
@@ -188,8 +161,9 @@ class TestOrderHappyPath(unittest.TestCase):
             "due_date": "2026-05-01",
         }
 
-        self.consumer.on_message(channel, method, None, _msg("order.created", payload))
+        result = self.consumer.process_message(_msg("order.created", payload))
 
+        self.assertTrue(result)
         self.consumer.email_service.send_order_created.assert_called_once_with(
             to_email="alice@example.com",
             username="Alice",
@@ -197,53 +171,48 @@ class TestOrderHappyPath(unittest.TestCase):
             book_titles=["Clean Code", "The Pragmatic Programmer"],
             due_date="2026-05-01",
         )
-        channel.basic_ack.assert_called_once_with(delivery_tag=1)
-        channel.basic_nack.assert_not_called()
 
     def test_order_approved_event_sends_status_update_email(self):
-        channel, method = _channel_method(2)
         payload = {"user_id": "u-1", "order_id": "ord-1", "new_status": "APPROVED"}
 
-        self.consumer.on_message(channel, method, None, _msg("order.status_updated", payload))
+        result = self.consumer.process_message(_msg("order.status_updated", payload))
 
+        self.assertTrue(result)
         self.consumer.email_service.send_order_status_updated.assert_called_once_with(
             to_email="alice@example.com",
             username="Alice",
             order_id="ord-1",
             new_status="APPROVED",
         )
-        channel.basic_ack.assert_called_once_with(delivery_tag=2)
 
     def test_order_borrowed_event_sends_status_update_email(self):
-        channel, method = _channel_method(3)
         payload = {"user_id": "u-1", "order_id": "ord-1", "new_status": "BORROWED"}
 
-        self.consumer.on_message(channel, method, None, _msg("order.status_updated", payload))
+        result = self.consumer.process_message(_msg("order.status_updated", payload))
 
+        self.assertTrue(result)
         self.consumer.email_service.send_order_status_updated.assert_called_once_with(
             to_email="alice@example.com",
             username="Alice",
             order_id="ord-1",
             new_status="BORROWED",
         )
-        channel.basic_ack.assert_called_once_with(delivery_tag=3)
 
     def test_order_returned_event_sends_status_update_email(self):
-        channel, method = _channel_method(4)
         payload = {"user_id": "u-1", "order_id": "ord-1", "new_status": "RETURNED"}
 
-        self.consumer.on_message(channel, method, None, _msg("order.status_updated", payload))
+        result = self.consumer.process_message(_msg("order.status_updated", payload))
 
+        self.assertTrue(result)
         self.consumer.email_service.send_order_status_updated.assert_called_once_with(
             to_email="alice@example.com",
             username="Alice",
             order_id="ord-1",
             new_status="RETURNED",
         )
-        channel.basic_ack.assert_called_once_with(delivery_tag=4)
 
     def test_full_lifecycle_processes_all_events_in_order(self):
-        """Simulate 4 events in sequence; each must be acked, email called once per event."""
+        """Simulate 4 events in sequence; each must succeed, email called once per event."""
         consumer = _make_consumer()
         user = SimpleNamespace(email="alice@example.com", name="Alice")
         book = SimpleNamespace(title="Clean Code")
@@ -258,11 +227,9 @@ class TestOrderHappyPath(unittest.TestCase):
             ("order.status_updated", {"user_id": "u-1", "order_id": "o-1", "new_status": "RETURNED"}),
         ]
 
-        for tag, (event_type, payload) in enumerate(events, start=1):
-            ch, meth = _channel_method(tag)
-            consumer.on_message(ch, meth, None, _msg(event_type, payload))
-            ch.basic_ack.assert_called_once_with(delivery_tag=tag)
-            ch.basic_nack.assert_not_called()
+        for event_type, payload in events:
+            result = consumer.process_message(_msg(event_type, payload))
+            self.assertTrue(result)
 
         self.assertEqual(1, consumer.email_service.send_order_created.call_count)
         self.assertEqual(3, consumer.email_service.send_order_status_updated.call_count)
@@ -281,22 +248,16 @@ class TestOrderCancelPath(unittest.TestCase):
         self.consumer.book_client.get_book.return_value = SimpleNamespace(title="Refactoring")
 
     def test_order_created_then_canceled_sends_two_emails(self):
-        # created
-        ch1, m1 = _channel_method(10)
-        self.consumer.on_message(
-            ch1, m1, None,
-            _msg("order.created", {"user_id": "u-2", "order_id": "o-2", "book_ids": ["b-3"], "due_date": "2026-06-01"}),
+        result1 = self.consumer.process_message(
+            _msg("order.created", {"user_id": "u-2", "order_id": "o-2", "book_ids": ["b-3"], "due_date": "2026-06-01"})
         )
-        ch1.basic_ack.assert_called_once_with(delivery_tag=10)
+        self.assertTrue(result1)
         self.consumer.email_service.send_order_created.assert_called_once()
 
-        # canceled
-        ch2, m2 = _channel_method(11)
-        self.consumer.on_message(
-            ch2, m2, None,
-            _msg("order.canceled", {"user_id": "u-2", "order_id": "o-2"}),
+        result2 = self.consumer.process_message(
+            _msg("order.canceled", {"user_id": "u-2", "order_id": "o-2"})
         )
-        ch2.basic_ack.assert_called_once_with(delivery_tag=11)
+        self.assertTrue(result2)
         self.consumer.email_service.send_order_canceled.assert_called_once_with(
             to_email="bob@example.com",
             username="Bob",
@@ -304,10 +265,8 @@ class TestOrderCancelPath(unittest.TestCase):
         )
 
     def test_canceled_event_does_not_call_book_client(self):
-        ch, m = _channel_method(12)
-        self.consumer.on_message(
-            ch, m, None,
-            _msg("order.canceled", {"user_id": "u-2", "order_id": "o-2"}),
+        self.consumer.process_message(
+            _msg("order.canceled", {"user_id": "u-2", "order_id": "o-2"})
         )
         self.consumer.book_client.get_book.assert_not_called()
 
@@ -317,154 +276,132 @@ class TestOrderCancelPath(unittest.TestCase):
 # ---------------------------------------------------------------------------
 class TestOrderFlowResilience(unittest.TestCase):
 
-    def test_created_user_not_found_no_email_and_ack(self):
+    def test_created_user_not_found_no_email_and_success(self):
         consumer = _make_consumer()
         consumer.user_client.get_profile.return_value = None
 
-        ch, m = _channel_method(20)
-        consumer.on_message(
-            ch, m, None,
-            _msg("order.created", {"user_id": "ghost", "order_id": "o-3", "book_ids": ["b-1"], "due_date": "N/A"}),
+        result = consumer.process_message(
+            _msg("order.created", {"user_id": "ghost", "order_id": "o-3", "book_ids": ["b-1"], "due_date": "N/A"})
         )
 
         consumer.email_service.send_order_created.assert_not_called()
-        ch.basic_ack.assert_called_once_with(delivery_tag=20)
-        ch.basic_nack.assert_not_called()
+        self.assertTrue(result)
 
-    def test_created_user_email_empty_no_email_and_ack(self):
+    def test_created_user_email_empty_no_email_and_success(self):
         consumer = _make_consumer()
         consumer.user_client.get_profile.return_value = SimpleNamespace(email="", name="Ghost")
 
-        ch, m = _channel_method(21)
-        consumer.on_message(
-            ch, m, None,
-            _msg("order.created", {"user_id": "u-ghost", "order_id": "o-4", "book_ids": [], "due_date": "N/A"}),
+        result = consumer.process_message(
+            _msg("order.created", {"user_id": "u-ghost", "order_id": "o-4", "book_ids": [], "due_date": "N/A"})
         )
 
         consumer.email_service.send_order_created.assert_not_called()
-        ch.basic_ack.assert_called_once_with(delivery_tag=21)
+        self.assertTrue(result)
 
     def test_created_book_not_found_skips_that_title_but_still_sends_email(self):
         """If one book lookup fails, skip that title but still send email for the rest."""
         consumer = _make_consumer()
         consumer.user_client.get_profile.return_value = SimpleNamespace(email="u@e.com", name="User")
-        # book_ids has 2 entries; second lookup returns None (not found)
         consumer.book_client.get_book.side_effect = [SimpleNamespace(title="Found Book"), None]
 
-        ch, m = _channel_method(22)
-        consumer.on_message(
-            ch, m, None,
-            _msg("order.created", {"user_id": "u-1", "order_id": "o-5", "book_ids": ["b-ok", "b-missing"], "due_date": "2026-07-01"}),
+        result = consumer.process_message(
+            _msg("order.created", {"user_id": "u-1", "order_id": "o-5", "book_ids": ["b-ok", "b-missing"], "due_date": "2026-07-01"})
         )
 
+        self.assertTrue(result)
         consumer.email_service.send_order_created.assert_called_once()
         _, kwargs = consumer.email_service.send_order_created.call_args
         self.assertEqual(["Found Book"], kwargs["book_titles"])
-        ch.basic_ack.assert_called_once_with(delivery_tag=22)
 
-    def test_status_updated_user_not_found_no_email_and_ack(self):
+    def test_status_updated_user_not_found_no_email_and_success(self):
         consumer = _make_consumer()
         consumer.user_client.get_profile.return_value = None
 
-        ch, m = _channel_method(23)
-        consumer.on_message(
-            ch, m, None,
-            _msg("order.status_updated", {"user_id": "ghost", "order_id": "o-6", "new_status": "APPROVED"}),
+        result = consumer.process_message(
+            _msg("order.status_updated", {"user_id": "ghost", "order_id": "o-6", "new_status": "APPROVED"})
         )
 
         consumer.email_service.send_order_status_updated.assert_not_called()
-        ch.basic_ack.assert_called_once_with(delivery_tag=23)
+        self.assertTrue(result)
 
-    def test_canceled_user_not_found_no_email_and_ack(self):
+    def test_canceled_user_not_found_no_email_and_success(self):
         consumer = _make_consumer()
         consumer.user_client.get_profile.return_value = None
 
-        ch, m = _channel_method(24)
-        consumer.on_message(
-            ch, m, None,
-            _msg("order.canceled", {"user_id": "ghost", "order_id": "o-7"}),
+        result = consumer.process_message(
+            _msg("order.canceled", {"user_id": "ghost", "order_id": "o-7"})
         )
 
         consumer.email_service.send_order_canceled.assert_not_called()
-        ch.basic_ack.assert_called_once_with(delivery_tag=24)
+        self.assertTrue(result)
 
-    def test_email_service_raises_does_not_propagate_and_nacks(self):
-        """If email_service.send_order_created raises, consumer should nack."""
+    def test_email_service_raises_returns_false(self):
+        """If email_service raises, process_message should return False (SQS will redeliver)."""
         consumer = _make_consumer()
         consumer.user_client.get_profile.return_value = SimpleNamespace(email="u@e.com", name="User")
         consumer.book_client.get_book.return_value = SimpleNamespace(title="A Book")
         consumer.email_service.send_order_created.side_effect = RuntimeError("SES down")
 
-        ch, m = _channel_method(25)
-        consumer.on_message(
-            ch, m, None,
-            _msg("order.created", {"user_id": "u-1", "order_id": "o-8", "book_ids": ["b-1"], "due_date": "N/A"}),
+        result = consumer.process_message(
+            _msg("order.created", {"user_id": "u-1", "order_id": "o-8", "book_ids": ["b-1"], "due_date": "N/A"})
         )
 
-        ch.basic_nack.assert_called_once_with(delivery_tag=25, requeue=False)
-        ch.basic_ack.assert_not_called()
+        self.assertFalse(result)
 
-    def test_malformed_json_body_nacks_without_crash(self):
+    def test_malformed_json_body_returns_false(self):
         consumer = _make_consumer()
-        ch, m = _channel_method(26)
 
-        consumer.on_message(ch, m, None, b"{not valid json")
+        result = consumer.process_message({"Body": "{not valid json", "ReceiptHandle": "rh-bad"})
 
-        ch.basic_nack.assert_called_once_with(delivery_tag=26, requeue=False)
-        ch.basic_ack.assert_not_called()
+        self.assertFalse(result)
 
-    def test_missing_event_type_field_acks_as_unknown(self):
-        """A message without event_type key should be acked (treated as unknown event)."""
+    def test_missing_event_type_field_returns_true_as_unknown(self):
+        """A message without event_type should be processed as unknown — returns True."""
         consumer = _make_consumer()
-        ch, m = _channel_method(27)
 
-        consumer.on_message(ch, m, None, json.dumps({"payload": {}}).encode())
+        result = consumer.process_message(
+            {"Body": json.dumps({"payload": {}}), "ReceiptHandle": "rh-1"}
+        )
 
-        ch.basic_ack.assert_called_once_with(delivery_tag=27)
+        self.assertTrue(result)
         consumer.email_service.send_order_created.assert_not_called()
 
-    def test_multiple_consecutive_events_each_acked_independently(self):
-        """Ack/nack state of one message must not affect the next."""
+    def test_multiple_consecutive_events_each_succeed_independently(self):
+        """Each message is independent; one failure must not affect the next."""
         consumer = _make_consumer()
         user = SimpleNamespace(email="u@e.com", name="User")
         consumer.user_client.get_profile.return_value = user
         consumer.book_client.get_book.return_value = SimpleNamespace(title="Go Programming")
 
-        channels = []
-        for tag, (etype, payload) in enumerate(
-            [
-                ("order.created",        {"user_id": "u-1", "order_id": "o-seq", "book_ids": ["b-1"], "due_date": "2026-08-01"}),
-                ("order.status_updated", {"user_id": "u-1", "order_id": "o-seq", "new_status": "APPROVED"}),
-                ("order.canceled",       {"user_id": "u-1", "order_id": "o-seq"}),
-            ],
-            start=30,
-        ):
-            ch, m = _channel_method(tag)
-            consumer.on_message(ch, m, None, _msg(etype, payload))
-            channels.append((tag, ch))
+        events = [
+            ("order.created",        {"user_id": "u-1", "order_id": "o-seq", "book_ids": ["b-1"], "due_date": "2026-08-01"}),
+            ("order.status_updated", {"user_id": "u-1", "order_id": "o-seq", "new_status": "APPROVED"}),
+            ("order.canceled",       {"user_id": "u-1", "order_id": "o-seq"}),
+        ]
 
-        for tag, ch in channels:
-            ch.basic_ack.assert_called_once_with(delivery_tag=tag)
-            ch.basic_nack.assert_not_called()
+        for event_type, payload in events:
+            result = consumer.process_message(_msg(event_type, payload))
+            self.assertTrue(result)
 
     def test_overdue_status_sent_correctly(self):
         consumer = _make_consumer()
         consumer.user_client.get_profile.return_value = SimpleNamespace(email="u@e.com", name="User")
 
-        ch, m = _channel_method(40)
-        consumer.on_message(
-            ch, m, None,
-            _msg("order.status_updated", {"user_id": "u-1", "order_id": "o-overdue", "new_status": "OVERDUE"}),
+        result = consumer.process_message(
+            _msg("order.status_updated", {"user_id": "u-1", "order_id": "o-overdue", "new_status": "OVERDUE"})
         )
 
+        self.assertTrue(result)
         consumer.email_service.send_order_status_updated.assert_called_once_with(
             to_email="u@e.com",
             username="User",
             order_id="o-overdue",
             new_status="OVERDUE",
         )
-        ch.basic_ack.assert_called_once_with(delivery_tag=40)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+

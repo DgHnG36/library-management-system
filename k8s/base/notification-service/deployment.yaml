@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lms-notification-service
+  labels:
+    app: notification
+    tier: worker
+spec:
+  # Single replica — SQS long-polling consumer; scale with caution to avoid duplicate processing
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification
+  template:
+    metadata:
+      labels:
+        app: notification
+        tier: worker
+    spec:
+      containers:
+        - name: notification-service
+          image: lms/notification-service:latest # TODO: replace with actual registry/image:tag
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: lms-notification-config
+            - secretRef:
+                name: lms-notification-secret
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"

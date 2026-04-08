@@ -39,3 +39,8 @@ tmp/
 
 # LOCAL DIRECTORY
 # ADD YOUR LOCAL DIRECTORY TO IGNORE HERE IF YOU HAVE ONE
+
+# Kubernetes secrets — ignore actual values, keep .env.example templates
+k8s/**/secrets/*.yaml
+k8s/**/secrets/*.env
+!k8s/**/secrets/*.env.example

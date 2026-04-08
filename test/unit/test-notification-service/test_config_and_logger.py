@@ -33,9 +33,8 @@ class TestConfigAndLogger(unittest.TestCase):
         cfg = module.config
 
         self.assertEqual("8000", cfg.PORT)
-        self.assertEqual("order-event", cfg.RABBITMQ_EXCHANGE)
-        self.assertEqual("notification-queue", cfg.RABBITMQ_QUEUE)
-        self.assertIn("order.created", cfg.RABBITMQ_ROUTING_KEYS)
+        self.assertEqual("", cfg.SQS_QUEUE_URL)
+        self.assertEqual("ap-southeast-1", cfg.AWS_REGION)
 
     def test_logger_returns_same_named_logger(self):
         logger_module = importlib.import_module("src.utils.logger")

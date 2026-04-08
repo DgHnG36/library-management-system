@@ -17,12 +17,10 @@ SRC_DIR = os.path.join(SERVICE_DIR, "src")
 
 class FakeConfig:
     PORT = "8000"
-    RABBITMQ_URL = "amqp://guest:guest@localhost:5672/"
-    RABBITMQ_EXCHANGE = "order-event"
-    RABBITMQ_QUEUE = "notification-queue"
-    RABBITMQ_ROUTING_KEYS = ["order.created", "order.canceled", "order.status_updated"]
-    USER_SVC_ADDR = "localhost:40041"
-    BOOK_SVC_ADDR = "localhost:40042"
+    SQS_QUEUE_URL = "https://sqs.ap-southeast-1.amazonaws.com/123456789/notification-queue"
+    AWS_REGION = "ap-southeast-1"
+    GRPC_USER_SERVICE_ADDR = "localhost:40041"
+    GRPC_BOOK_SERVICE_ADDR = "localhost:40042"
 
 
 class FakeEmailService:
@@ -46,28 +44,10 @@ class FakeBookClient:
         self.close = MagicMock()
 
 
-class FakeURLParameters:
-    def __init__(self, url):
-        self.url = url
-        self.heartbeat = None
-        self.blocked_connection_timeout = None
-
-
-class FakeBlockingConnection:
-    def __init__(self, params):
-        self.params = params
-        self._channel = MagicMock()
-        self.is_open = True
-
-    def channel(self):
-        return self._channel
-
-    def close(self):
-        self.is_open = False
-
-
-class FakeAMQPConnectionError(Exception):
-    pass
+class FakeSQSClient:
+    def __init__(self):
+        self.receive_message = MagicMock(return_value={"Messages": []})
+        self.delete_message = MagicMock()
 
 
 def load_main_module():
@@ -95,12 +75,9 @@ def load_main_module():
     logger_module = types.ModuleType("src.utils.logger")
     logger_module.logger = MagicMock()
 
-    pika_module = types.ModuleType("pika")
-    pika_module.URLParameters = FakeURLParameters
-    pika_module.BlockingConnection = FakeBlockingConnection
-
-    pika_exceptions_module = types.ModuleType("pika.exceptions")
-    pika_exceptions_module.AMQPConnectionError = FakeAMQPConnectionError
+    fake_sqs_instance = FakeSQSClient()
+    fake_boto3 = types.ModuleType("boto3")
+    fake_boto3.client = MagicMock(return_value=fake_sqs_instance)
 
     module_name = "notification_service_main_tested"
     if module_name in sys.modules:
@@ -117,8 +94,7 @@ def load_main_module():
             "src.client.book_client": book_client_module,
             "src.utils.config": config_module,
             "src.utils.logger": logger_module,
-            "pika": pika_module,
-            "pika.exceptions": pika_exceptions_module,
+            "boto3": fake_boto3,
         },
     ):
         spec = importlib.util.spec_from_file_location(module_name, MAIN_FILE)
@@ -129,88 +105,62 @@ def load_main_module():
     return module
 
 
+def _sqs_msg(event_type: str, payload: dict, receipt_handle: str = "rh-1") -> dict:
+    return {
+        "Body": json.dumps({"event_type": event_type, "payload": payload}),
+        "ReceiptHandle": receipt_handle,
+    }
+
+
 class TestNotificationConsumerMain(unittest.TestCase):
-    def test_connect_declares_exchange_queue_bindings_and_qos(self):
+    def test_connect_creates_sqs_client(self):
         module = load_main_module()
         consumer = module.NotificationConsumer()
 
         consumer.connect()
 
-        self.assertIsNotNone(consumer._connection)
-        self.assertIsNotNone(consumer._channel)
-        consumer._channel.exchange_declare.assert_called_once_with(
-            exchange=FakeConfig.RABBITMQ_EXCHANGE,
-            exchange_type="topic",
-            durable=True,
-        )
-        consumer._channel.queue_declare.assert_called_once_with(
-            queue=FakeConfig.RABBITMQ_QUEUE,
-            durable=True,
-        )
-        self.assertEqual(
-            len(FakeConfig.RABBITMQ_ROUTING_KEYS),
-            consumer._channel.queue_bind.call_count,
-        )
-        consumer._channel.basic_qos.assert_called_once_with(prefetch_count=1)
+        self.assertIsNotNone(consumer._sqs)
 
-    def test_on_message_order_created_ack(self):
+    def test_process_message_order_created_returns_true(self):
         module = load_main_module()
         consumer = module.NotificationConsumer()
         consumer._handle_order_created = MagicMock()
 
-        channel = MagicMock()
-        method = SimpleNamespace(delivery_tag=10)
-        body = json.dumps({"event_type": "order.created", "payload": {"x": 1}}).encode()
-
-        consumer.on_message(channel, method, None, body)
+        result = consumer.process_message(_sqs_msg("order.created", {"x": 1}))
 
         consumer._handle_order_created.assert_called_once_with({"x": 1})
-        channel.basic_ack.assert_called_once_with(delivery_tag=10)
-        channel.basic_nack.assert_not_called()
+        self.assertTrue(result)
 
-    def test_on_message_unknown_event_ack_only(self):
+    def test_process_message_unknown_event_returns_true(self):
         module = load_main_module()
         consumer = module.NotificationConsumer()
         consumer._handle_order_created = MagicMock()
         consumer._handle_order_canceled = MagicMock()
         consumer._handle_order_status_updated = MagicMock()
 
-        channel = MagicMock()
-        method = SimpleNamespace(delivery_tag=11)
-        body = json.dumps({"event_type": "unknown", "payload": {}}).encode()
-
-        consumer.on_message(channel, method, None, body)
+        result = consumer.process_message(_sqs_msg("unknown.event", {}))
 
         consumer._handle_order_created.assert_not_called()
         consumer._handle_order_canceled.assert_not_called()
         consumer._handle_order_status_updated.assert_not_called()
-        channel.basic_ack.assert_called_once_with(delivery_tag=11)
+        self.assertTrue(result)
 
-    def test_on_message_bad_json_nack(self):
+    def test_process_message_bad_json_returns_false(self):
         module = load_main_module()
         consumer = module.NotificationConsumer()
 
-        channel = MagicMock()
-        method = SimpleNamespace(delivery_tag=12)
+        result = consumer.process_message({"Body": "{bad json", "ReceiptHandle": "rh-bad"})
 
-        consumer.on_message(channel, method, None, b"{bad json")
+        self.assertFalse(result)
 
-        channel.basic_nack.assert_called_once_with(delivery_tag=12, requeue=False)
-        channel.basic_ack.assert_not_called()
-
-    def test_on_message_handler_exception_nack(self):
+    def test_process_message_handler_exception_returns_false(self):
         module = load_main_module()
         consumer = module.NotificationConsumer()
         consumer._handle_order_created = MagicMock(side_effect=RuntimeError("boom"))
 
-        channel = MagicMock()
-        method = SimpleNamespace(delivery_tag=13)
-        body = json.dumps({"event_type": "order.created", "payload": {"x": 1}}).encode()
+        result = consumer.process_message(_sqs_msg("order.created", {"x": 1}))
 
-        consumer.on_message(channel, method, None, body)
-
-        channel.basic_nack.assert_called_once_with(delivery_tag=13, requeue=False)
-        channel.basic_ack.assert_not_called()
+        self.assertFalse(result)
 
     def test_handle_order_created_sends_email_with_books(self):
         module = load_main_module()
@@ -303,25 +253,16 @@ class TestNotificationConsumerMain(unittest.TestCase):
 
         consumer.email_service.send_order_status_updated.assert_not_called()
 
-    def test_shutdown_closes_resources(self):
+    def test_shutdown_closes_user_and_book_clients(self):
         module = load_main_module()
         consumer = module.NotificationConsumer()
 
-        channel = MagicMock()
-        channel.is_open = True
-        connection = MagicMock()
-        connection.is_open = True
-
-        consumer._channel = channel
-        consumer._connection = connection
-
         consumer._shutdown()
 
-        channel.stop_consuming.assert_called_once()
-        connection.close.assert_called_once()
         consumer.user_client.close.assert_called_once()
         consumer.book_client.close.assert_called_once()
 
 
 if __name__ == "__main__":
     unittest.main()
+
