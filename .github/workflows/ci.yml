@@ -6,8 +6,9 @@ on:
     branches: [main]
 
 env:
-  GO_VERS: 1.22
-  PYTHON_VERS: 3.12
+  GO_VERS: "1.22"
+  PYTHON_VERS: "3.12"
+  GOLANGCI_VERS: "v1.64.0"
   REGISTRY: docker.io
   IMAGE_PREFIX: lms
 
@@ -25,7 +26,7 @@ jobs:
       - name: Lint Go Code
         uses: golangci/golangci-lint-action@v6
         with:
-          version: ${{ env.GO_VERS }}
+          version: ${{ env.GOLANGCI_VERS }}
           working-directory: ./services/${{ matrix.service}}
 
       - name: Lint Python Code
