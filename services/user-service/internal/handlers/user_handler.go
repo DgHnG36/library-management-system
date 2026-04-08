@@ -5,6 +5,7 @@ import (
 
 	"github.com/DgHnG36/lib-management-system/services/user-service/internal/applications"
 	"github.com/DgHnG36/lib-management-system/services/user-service/internal/models"
+	"github.com/DgHnG36/lib-management-system/services/user-service/pkg/interceptor"
 	"github.com/DgHnG36/lib-management-system/services/user-service/pkg/logger"
 	commonv1 "github.com/DgHnG36/lib-management-system/shared/go/v1"
 	userv1 "github.com/DgHnG36/lib-management-system/shared/go/v1/user"
@@ -104,7 +105,7 @@ func (h *UserHandler) GetProfile(ctx context.Context, req *userv1.GetProfileRequ
 }
 
 func (h *UserHandler) UpdateProfile(ctx context.Context, req *userv1.UpdateProfileRequest) (*userv1.UserProfileResponse, error) {
-	if req.GetId() == "" || ctx.Value("X-User-ID") == "" {
+	if req.GetId() == "" || ctx.Value(interceptor.ContextKeyUserID) == "" {
 		return nil, status.Error(codes.InvalidArgument, "ID user is required")
 	}
 
@@ -126,7 +127,7 @@ func (h *UserHandler) UpdateProfile(ctx context.Context, req *userv1.UpdateProfi
 }
 
 func (h *UserHandler) UpdateVIPAccount(ctx context.Context, req *userv1.UpdateVIPAccountRequest) (*userv1.UpdateVIPAccountResponse, error) {
-	userRole := models.UserRole(ctx.Value("X-User-Role").(string))
+	userRole := models.UserRole(ctx.Value(interceptor.ContextKeyUserRole).(string))
 	if userRole != models.RoleAdmin {
 		return nil, status.Error(codes.PermissionDenied, "only admins can update VIP status")
 	}
@@ -163,7 +164,7 @@ func (h *UserHandler) ListUsers(ctx context.Context, req *userv1.ListUsersReques
 		isDesc = req.Pagination.GetIsDesc()
 	}
 
-	callerRole := models.UserRole(ctx.Value("X-User-Role").(string))
+	callerRole := models.UserRole(ctx.Value(interceptor.ContextKeyUserRole).(string))
 	if callerRole != models.RoleAdmin && callerRole != models.RoleManager {
 		return nil, status.Error(codes.PermissionDenied, "only admins or managers can list users")
 	}
@@ -190,7 +191,7 @@ func (h *UserHandler) ListUsers(ctx context.Context, req *userv1.ListUsersReques
 }
 
 func (h *UserHandler) DeleteUsers(ctx context.Context, req *userv1.DeleteUsersRequest) (*commonv1.BaseResponse, error) {
-	callerRole := models.UserRole(ctx.Value("X-User-Role").(string))
+	callerRole := models.UserRole(ctx.Value(interceptor.ContextKeyUserRole).(string))
 	if callerRole != models.RoleAdmin {
 		return nil, status.Error(codes.PermissionDenied, "only admins can delete users")
 	}
@@ -216,7 +217,7 @@ func (h *UserHandler) RefreshToken(ctx context.Context, req *userv1.RefreshToken
 	if req.GetRefreshToken() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "refresh token is required")
 	}
-	tokenPair, err := h.userService.RefreshToken(ctx, ctx.Value("X-User-ID").(string), req.GetRefreshToken())
+	tokenPair, err := h.userService.RefreshToken(ctx, ctx.Value(interceptor.ContextKeyUserID).(string), req.GetRefreshToken())
 	if err != nil {
 		h.logger.Error("Failed to refresh token", err)
 		return nil, err

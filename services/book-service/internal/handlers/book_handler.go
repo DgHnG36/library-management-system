@@ -5,6 +5,7 @@ import (
 
 	"github.com/DgHnG36/lib-management-system/services/book-service/internal/applications"
 	"github.com/DgHnG36/lib-management-system/services/book-service/internal/models"
+	"github.com/DgHnG36/lib-management-system/services/book-service/pkg/interceptor"
 	"github.com/DgHnG36/lib-management-system/services/book-service/pkg/logger"
 	commonv1 "github.com/DgHnG36/lib-management-system/shared/go/v1"
 	bookv1 "github.com/DgHnG36/lib-management-system/shared/go/v1/book"
@@ -88,7 +89,7 @@ func (h *BookHandler) ListBooks(ctx context.Context, req *bookv1.ListBooksReques
 }
 
 func (h *BookHandler) CreateBooks(ctx context.Context, req *bookv1.CreateBooksRequest) (*bookv1.CreateBooksResponse, error) {
-	role := ctx.Value("X-User-Role")
+	role := ctx.Value(interceptor.ContextKeyUserRole)
 	if role != "ADMIN" && role != "MANAGER" {
 		return nil, status.Error(codes.PermissionDenied, "only admins and managers can create books")
 	}
@@ -127,7 +128,7 @@ func (h *BookHandler) CreateBooks(ctx context.Context, req *bookv1.CreateBooksRe
 }
 
 func (h *BookHandler) UpdateBook(ctx context.Context, req *bookv1.UpdateBookRequest) (*bookv1.BookResponse, error) {
-	role := ctx.Value("X-User-Role")
+	role := ctx.Value(interceptor.ContextKeyUserRole)
 	if role != "ADMIN" && role != "MANAGER" {
 		return nil, status.Error(codes.PermissionDenied, "only admins and managers can update books")
 	}
@@ -163,7 +164,7 @@ func (h *BookHandler) UpdateBook(ctx context.Context, req *bookv1.UpdateBookRequ
 }
 
 func (h *BookHandler) DeleteBooks(ctx context.Context, req *bookv1.DeleteBooksRequest) (*commonv1.BaseResponse, error) {
-	role := ctx.Value("X-User-Role")
+	role := ctx.Value(interceptor.ContextKeyUserRole)
 	if role != "ADMIN" && role != "MANAGER" {
 		return nil, status.Error(codes.PermissionDenied, "only admins and managers can delete books")
 	}
@@ -186,7 +187,7 @@ func (h *BookHandler) DeleteBooks(ctx context.Context, req *bookv1.DeleteBooksRe
 }
 
 func (h *BookHandler) CheckAvailability(ctx context.Context, req *bookv1.CheckAvailabilityRequest) (*bookv1.CheckAvailabilityResponse, error) {
-	role := ctx.Value("X-User-Role")
+	role := ctx.Value(interceptor.ContextKeyUserRole)
 	if role != "ADMIN" && role != "MANAGER" && role != "SYSTEM" {
 		return nil, status.Error(codes.PermissionDenied, "only admins, managers, and users can check book availability")
 	}
@@ -210,7 +211,7 @@ func (h *BookHandler) CheckAvailability(ctx context.Context, req *bookv1.CheckAv
 }
 
 func (h *BookHandler) UpdateBookQuantity(ctx context.Context, req *bookv1.UpdateBookQuantityRequest) (*bookv1.UpdateBookQuantityResponse, error) {
-	role := ctx.Value("X-User-Role")
+	role := ctx.Value(interceptor.ContextKeyUserRole)
 	if role != "ADMIN" && role != "MANAGER" && role != "SYSTEM" {
 		return nil, status.Error(codes.PermissionDenied, "only admins and managers can update book quantity")
 	}

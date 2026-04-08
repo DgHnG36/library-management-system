@@ -12,17 +12,25 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// contextKey is an unexported type for context keys in this package.
+type contextKey string
+
+const (
+	ContextKeyUserRole contextKey = "X-User-Role"
+	ContextKeyUserID   contextKey = "X-User-ID"
+)
+
 // MetadataInterceptor extracts well-known gRPC incoming metadata keys
 // (x-user-role, x-user-id) and injects them as context values so that
-// handler code can read them via ctx.Value("X-User-Role") etc.
+// handler code can read them via ctx.Value(ContextKeyUserRole) etc.
 func MetadataInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if md, ok := metadata.FromIncomingContext(ctx); ok {
 			if vals := md.Get("x-user-role"); len(vals) > 0 {
-				ctx = context.WithValue(ctx, "X-User-Role", vals[0])
+				ctx = context.WithValue(ctx, ContextKeyUserRole, vals[0])
 			}
 			if vals := md.Get("x-user-id"); len(vals) > 0 {
-				ctx = context.WithValue(ctx, "X-User-ID", vals[0])
+				ctx = context.WithValue(ctx, ContextKeyUserID, vals[0])
 			}
 		}
 		return handler(ctx, req)
