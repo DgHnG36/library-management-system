@@ -302,7 +302,7 @@ func (h *BookHandler) identifyTitle(identifier string) bool {
 			if c != '-' {
 				return true
 			}
-		} else if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+		} else if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
 			return true
 		}
 	}
