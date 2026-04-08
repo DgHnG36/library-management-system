@@ -94,7 +94,7 @@ func main() {
 			"addr": cfg.Services.UserServiceAddr,
 		})
 	}
-	defer userConn.Close()
+	defer func() { _ = userConn.Close() }()
 
 	bookConn, err := grpc.NewClient(
 		cfg.Services.BookServiceAddr,
@@ -105,7 +105,7 @@ func main() {
 			"addr": cfg.Services.BookServiceAddr,
 		})
 	}
-	defer bookConn.Close()
+	defer func() { _ = bookConn.Close() }()
 
 	userClient := userv1.NewUserServiceClient(userConn)
 	bookClient := bookv1.NewBookServiceClient(bookConn)

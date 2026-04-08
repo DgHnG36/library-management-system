@@ -291,7 +291,9 @@ func (s *UserService) RefreshToken(ctx context.Context, userID, refreshToken str
 	}
 
 	if time.Now().After(userToken.ExpiresAt) {
-		s.userRepo.DeleteRefreshToken(ctx, tokenHashed)
+		if err := s.userRepo.DeleteRefreshToken(ctx, tokenHashed); err != nil {
+			s.logger.Error("Failed to delete expired refresh token", err, logger.Fields{"user_id": userID})
+		}
 		s.logger.Debug("Refresh token expired", logger.Fields{
 			"user_id": userID,
 		})

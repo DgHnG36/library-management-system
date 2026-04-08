@@ -117,11 +117,15 @@ func (s *OrderService) CreateOrder(ctx context.Context, userID string, bookIDs [
 	}
 
 	// Publish event
-	go s.publisher.Publish("order.created", map[string]interface{}{
-		"order_id": order.ID,
-		"user_id":  userID,
-		"book_ids": bookIDs,
-	})
+	go func() {
+		if err := s.publisher.Publish("order.created", map[string]interface{}{
+			"order_id": order.ID,
+			"user_id":  userID,
+			"book_ids": bookIDs,
+		}); err != nil {
+			s.logger.Error("Failed to publish order.created event", err, logger.Fields{"order_id": order.ID})
+		}
+	}()
 
 	s.logger.Info("Order created successfully", logger.Fields{
 		"order_id": order.ID,
@@ -274,11 +278,15 @@ func (s *OrderService) UpdateOrderStatus(ctx context.Context, orderID string, ne
 		}
 	}
 
-	go s.publisher.Publish("order.status_updated", map[string]interface{}{
-		"order_id":   orderID,
-		"new_status": newStatus,
-		"note":       note,
-	})
+	go func() {
+		if err := s.publisher.Publish("order.status_updated", map[string]interface{}{
+			"order_id":   orderID,
+			"new_status": newStatus,
+			"note":       note,
+		}); err != nil {
+			s.logger.Error("Failed to publish order.status_updated event", err, logger.Fields{"order_id": orderID})
+		}
+	}()
 
 	return s.orderRepo.FindByID(ctx, orderID)
 }
@@ -316,10 +324,14 @@ func (s *OrderService) CancelOrder(ctx context.Context, orderID string, userID s
 		}(ob.BookID)
 	}
 
-	go s.publisher.Publish("order.canceled", map[string]interface{}{
-		"order_id": orderID,
-		"user_id":  userID,
-	})
+	go func() {
+		if err := s.publisher.Publish("order.canceled", map[string]interface{}{
+			"order_id": orderID,
+			"user_id":  userID,
+		}); err != nil {
+			s.logger.Error("Failed to publish order.canceled event", err, logger.Fields{"order_id": orderID})
+		}
+	}()
 
 	return order, nil
 }

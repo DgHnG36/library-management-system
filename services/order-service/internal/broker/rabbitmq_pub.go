@@ -52,7 +52,7 @@ func (p *RabbitMQPublisher) connect() error {
 
 	ch, err := conn.Channel()
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return fmt.Errorf("failed to open a channel: %w", err)
 	}
 
@@ -67,8 +67,8 @@ func (p *RabbitMQPublisher) connect() error {
 	)
 
 	if err != nil {
-		ch.Close()
-		conn.Close()
+		_ = ch.Close()
+		_ = conn.Close()
 		return fmt.Errorf("failed to declare exchange: %w", err)
 	}
 
@@ -145,9 +145,9 @@ func (p *RabbitMQPublisher) Close() {
 	defer p.mu.Unlock()
 
 	if p.channel != nil {
-		p.channel.Close()
+		_ = p.channel.Close()
 	}
 	if p.conn != nil {
-		p.conn.Close()
+		_ = p.conn.Close()
 	}
 }
