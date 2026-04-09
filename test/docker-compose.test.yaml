@@ -344,11 +344,11 @@ services:
       book-service:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "ps -o comm= 1 | grep -q '^python$$'"]
+      test: ["CMD-SHELL", "grep -q python /proc/1/cmdline"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
     restart: on-failure
     networks:
       - lms-network
