@@ -18,19 +18,18 @@ GitHub Actions (CD)
                     ├─ book-service
                     ├─ order-service      ──publish──▶ AWS SQS
                     ├─ notification-service ◀─poll───  AWS SQS
-                    ├─ redis (in-cluster)
-                    └─ rabbitmq (in-cluster, dùng bởi order-service)
+                    └─ redis (in-cluster)
                           │
                ┌──────────┴──────────┐
           AWS RDS (PostgreSQL)   AWS SES (email)
 ```
 
-| Service    | Chạy ở đâu         | Ghi chú                                      |
-| ---------- | ------------------ | -------------------------------------------- |
-| PostgreSQL | AWS RDS            | Không cần StatefulSet trong K8s              |
-| SQS        | AWS SQS            | Không cần deploy gì trong K8s                |
-| RabbitMQ   | Self-hosted in k3s | order-service publish; notification dùng SQS |
-| Redis      | Self-hosted in k3s | Gateway rate-limit / cache                   |
+| Service    | Chạy ở đâu         | Ghi chú                                                   |
+| ---------- | ------------------ | --------------------------------------------------------- |
+| PostgreSQL | AWS RDS            | Không cần StatefulSet trong K8s                           |
+| SQS        | AWS SQS            | order-service publish; notification-service poll          |
+| RabbitMQ   | ❌ Không dùng      | Thay hoàn toàn bằng SQS trong prod, scale StatefulSet = 0 |
+| Redis      | Self-hosted in k3s | Gateway rate-limit / cache                                |
 
 ---
 
@@ -208,7 +207,7 @@ aws sqs get-queue-url \
 
 ### 3.2 Cấu hình order-service publish lên SQS
 
-Order service cần publish event `order.created`, `order.canceled`, `order.status_updated` lên SQS thay vì RabbitMQ. Xem thêm code trong `services/order-service/`.
+Trong prod, order-service publish event `order.created`, `order.canceled`, `order.status_updated` lên SQS (không dùng RabbitMQ). Secret `SQS_QUEUE_URL` được inject qua `lms-order-secret` bởi CD pipeline.
 
 ### 3.3 K8s config cho notification-service
 
@@ -348,10 +347,10 @@ Xem file [`.github/workflows/cd.yml`](../.github/workflows/cd.yml) để xem imp
 [ ] Tạo SQS queue notification-queue
 [ ] Verify SES sender email (AWS Console → SES → Verified identities)
 [ ] Cập nhật RDS endpoint trong k8s/overlays/prod/kustomization.yaml
-[ ] Cập nhật SQS_QUEUE_URL trong k8s/overlays/prod/kustomization.yaml
+[ ] Scale RabbitMQ StatefulSet replicas: 0 trong k8s/overlays/prod/kustomization.yaml
 [ ] Tạo Docker Hub token, thêm vào GitHub Secrets
 [ ] Lấy kubeconfig từ EC2, base64-encode, thêm vào GitHub Secrets
-[ ] Thêm tất cả secrets còn lại vào GitHub Secrets
+[ ] Thêm tất cả secrets còn lại vào GitHub Secrets (bao gồm PROD_SQS_QUEUE_URL)
 [ ] Push to main → trigger CD
 [ ] Kiểm tra: kubectl get pods -n lms
 ```
@@ -363,7 +362,7 @@ Xem file [`.github/workflows/cd.yml`](../.github/workflows/cd.yml) để xem imp
 | Service    | Self-hosted (k8s)     | AWS Managed                                               |
 | ---------- | --------------------- | --------------------------------------------------------- |
 | PostgreSQL | StatefulSet + Service | ❌ Không cần — chỉ cần cập nhật `DB_HOST` trong ConfigMap |
-| RabbitMQ   | StatefulSet + Service | ✅ Giữ nguyên self-hosted — không thay đổi                |
+| RabbitMQ   | StatefulSet + Service | ❌ Không dùng trong prod — scale `replicas: 0`, dùng SQS  |
 
 AWS RDS chạy bên ngoài cluster. Các pods kết nối qua DNS endpoint do AWS cấp
 — không cần bất kỳ K8s resource nào cho RDS.

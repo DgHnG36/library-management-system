@@ -76,14 +76,16 @@ jobs:
             --namespace lms \
             --dry-run=client -o yaml | kubectl apply -f -
 
+          # order-service publish events lên SQS trong prod (không dùng RabbitMQ)
           kubectl create secret generic lms-order-secret \
-            --from-literal=RABBITMQ_URL="${{ secrets.PROD_RABBITMQ_URL }}" \
+            --from-literal=SQS_QUEUE_URL="${{ secrets.PROD_SQS_QUEUE_URL }}" \
             --namespace lms \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          # notification-service dùng SQS — không cần RABBITMQ_URL
+          # notification-service poll từ SQS
           # Nếu EC2 có IAM Role, bỏ AWS_ACCESS_KEY_ID và AWS_SECRET_ACCESS_KEY
           kubectl create secret generic lms-notification-secret \
+            --from-literal=SQS_QUEUE_URL="${{ secrets.PROD_SQS_QUEUE_URL }}" \
             --from-literal=AWS_ACCESS_KEY_ID="${{ secrets.PROD_AWS_ACCESS_KEY_ID }}" \
             --from-literal=AWS_SECRET_ACCESS_KEY="${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}" \
             --namespace lms \

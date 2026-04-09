@@ -47,6 +47,14 @@ patches:
       spec:
         replicas: 0
 
+  - patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: lms-rabbitmq
+      spec:
+        replicas: 0
+
   # ── RDS endpoint — replace with your actual RDS endpoint ─────────────────────
   # Find it: aws rds describe-db-instances --query 'DBInstances[0].Endpoint.Address'
   - patch: |-
