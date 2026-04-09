@@ -29,14 +29,6 @@ resources:
   - configmaps/notification-configmap.yaml
   - configmaps/postgres-configmap.yaml
 
-  # Secrets are managed per-environment:
-  # - dev overlay: patches override placeholder values below
-  # - prod: kubectl create secret in cd.yml (GitHub Actions) overrides these
-  - secrets/gateway-secret.yaml
-  - secrets/user-secret.yaml
-  - secrets/book-secret.yaml
-  - secrets/order-secret.yaml
-  - secrets/notification-secret.yaml
-  - secrets/redis-secret.yaml
-  - secrets/postgres-secret.yaml
-  - secrets/rabbitmq-secret.yaml
+  # NOTE: Secrets are NOT declared here — they are gitignored.
+  # - dev: secretGenerator in dev overlay reads secrets/*.env (local only)
+  # - prod: kubectl create secret in cd.yml (GitHub Actions)

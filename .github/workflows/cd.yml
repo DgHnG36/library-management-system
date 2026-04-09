@@ -56,43 +56,52 @@ jobs:
             lms/order-service=${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/lms-order-service:${TAG} \
             lms/notification-service=${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/lms-notification-service:${TAG}
 
-      - name: Inject RDS credentials
+      - name: Generate prod secret env files
+        env:
+          PROD_JWT_SECRET: ${{ secrets.PROD_JWT_SECRET }}
+          PROD_REDIS_PASSWORD: ${{ secrets.PROD_REDIS_PASSWORD }}
+          PROD_DB_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
+          PROD_SQS_QUEUE_URL: ${{ secrets.PROD_SQS_QUEUE_URL }}
+          PROD_AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          PROD_AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
         run: |
-          sed -i "s|CHANGE_ME|${{ secrets.PROD_DB_PASSWORD }}|g" \
-            k8s/overlays/prod/rds-secret.yaml
+          mkdir -p k8s/base/secrets
 
-      - name: Inject prod secrets via kubectl
-        run: |
-          kubectl create namespace lms --dry-run=client -o yaml | kubectl apply -f -
+          printf 'JWT_SECRET=%s\nREDIS_PASSWORD=%s\n' \
+            "$PROD_JWT_SECRET" "$PROD_REDIS_PASSWORD" \
+            > k8s/base/secrets/gateway.env
 
-          kubectl create secret generic lms-gateway-secret \
-            --from-literal=JWT_SECRET="${{ secrets.PROD_JWT_SECRET }}" \
-            --from-literal=REDIS_PASSWORD="${{ secrets.PROD_REDIS_PASSWORD }}" \
-            --namespace lms \
-            --dry-run=client -o yaml | kubectl apply -f -
+          printf 'JWT_SECRET=%s\nDB_PASSWORD=%s\n' \
+            "$PROD_JWT_SECRET" "$PROD_DB_PASSWORD" \
+            > k8s/base/secrets/user.env
 
-          kubectl create secret generic lms-user-secret \
-            --from-literal=JWT_SECRET="${{ secrets.PROD_JWT_SECRET }}" \
-            --namespace lms \
-            --dry-run=client -o yaml | kubectl apply -f -
+          printf 'DB_PASSWORD=%s\n' \
+            "$PROD_DB_PASSWORD" \
+            > k8s/base/secrets/book.env
 
-          # order-service publish events lên SQS trong prod (không dùng RabbitMQ)
-          kubectl create secret generic lms-order-secret \
-            --from-literal=SQS_QUEUE_URL="${{ secrets.PROD_SQS_QUEUE_URL }}" \
-            --namespace lms \
-            --dry-run=client -o yaml | kubectl apply -f -
+          printf 'DB_PASSWORD=%s\nSQS_QUEUE_URL=%s\n' \
+            "$PROD_DB_PASSWORD" "$PROD_SQS_QUEUE_URL" \
+            > k8s/base/secrets/order.env
 
-          # notification-service poll từ SQS
-          # Nếu EC2 có IAM Role, bỏ AWS_ACCESS_KEY_ID và AWS_SECRET_ACCESS_KEY
-          kubectl create secret generic lms-notification-secret \
-            --from-literal=SQS_QUEUE_URL="${{ secrets.PROD_SQS_QUEUE_URL }}" \
-            --from-literal=AWS_ACCESS_KEY_ID="${{ secrets.PROD_AWS_ACCESS_KEY_ID }}" \
-            --from-literal=AWS_SECRET_ACCESS_KEY="${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}" \
-            --namespace lms \
-            --dry-run=client -o yaml | kubectl apply -f -
+          printf 'SQS_QUEUE_URL=%s\nAWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' \
+            "$PROD_SQS_QUEUE_URL" "$PROD_AWS_ACCESS_KEY_ID" "$PROD_AWS_SECRET_ACCESS_KEY" \
+            > k8s/base/secrets/notification.env
+
+          printf 'REDIS_PASSWORD=%s\n' \
+            "$PROD_REDIS_PASSWORD" \
+            > k8s/base/secrets/redis.env
+
+          printf 'POSTGRES_USER=postgres\nPOSTGRES_PASSWORD=%s\n' \
+            "$PROD_DB_PASSWORD" \
+            > k8s/base/secrets/postgres.env
+
+          printf 'RABBITMQ_DEFAULT_USER=guest\nRABBITMQ_DEFAULT_PASS=guest\n' \
+            > k8s/base/secrets/rabbitmq.env
 
       - name: Apply kustomization
-        run: kubectl apply -k k8s/overlays/prod
+        run: |
+          kubectl create namespace lms --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -k k8s/overlays/prod
 
       - name: Wait for rollout
         run: |

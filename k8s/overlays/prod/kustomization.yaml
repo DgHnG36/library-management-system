@@ -6,6 +6,35 @@ namespace: lms
 resources:
   - ../../base
 
+generatorOptions:
+  disableNameSuffixHash: true
+
+secretGenerator:
+  - name: lms-gateway-secret
+    envs:
+      - ../../base/secrets/gateway.env
+  - name: lms-user-secret
+    envs:
+      - ../../base/secrets/user.env
+  - name: lms-book-secret
+    envs:
+      - ../../base/secrets/book.env
+  - name: lms-order-secret
+    envs:
+      - ../../base/secrets/order.env
+  - name: lms-notification-secret
+    envs:
+      - ../../base/secrets/notification.env
+  - name: lms-redis-secret
+    envs:
+      - ../../base/secrets/redis.env
+  - name: lms-postgres-secret
+    envs:
+      - ../../base/secrets/postgres.env
+  - name: lms-rabbitmq-secret
+    envs:
+      - ../../base/secrets/rabbitmq.env
+
 images:
   - name: lms/gateway-service
     newName: docker.io/DgHnG36/lms-gateway-service
@@ -55,8 +84,6 @@ patches:
       spec:
         replicas: 0
 
-  # ── RDS endpoint — replace with your actual RDS endpoint ─────────────────────
-  # Find it: aws rds describe-db-instances --query 'DBInstances[0].Endpoint.Address'
   - patch: |-
       apiVersion: v1
       kind: ConfigMap
@@ -91,5 +118,3 @@ patches:
         name: lms-notification-config
       data:
         SQS_QUEUE_URL: "https://sqs.ap-southeast-2.amazonaws.com/279319515378/notification-queue"
-
-  - path: rds-secret.yaml
