@@ -99,6 +99,10 @@ def _load_consumer_module():
     fake_boto3 = types.ModuleType("boto3")
     fake_boto3.client = MagicMock(return_value=fake_sqs_instance)
 
+    fake_pika = types.ModuleType("pika")
+    fake_pika.URLParameters = MagicMock()
+    fake_pika.BlockingConnection = MagicMock()
+
     module_name = "notification_order_flow_main"
     sys.modules.pop(module_name, None)
 
@@ -114,6 +118,7 @@ def _load_consumer_module():
             "src.utils.config": config_module,
             "src.utils.logger": logger_module,
             "boto3": fake_boto3,
+            "pika": fake_pika,
         },
     ):
         spec = importlib.util.spec_from_file_location(module_name, MAIN_FILE)
@@ -146,7 +151,7 @@ class TestOrderHappyPath(unittest.TestCase):
 
     def setUp(self):
         self.consumer = _make_consumer()
-        self.user = SimpleNamespace(email="alice@example.com", name="Alice")
+        self.user = SimpleNamespace(email="alice@example.com", username="Alice")
         self.book1 = SimpleNamespace(title="Clean Code")
         self.book2 = SimpleNamespace(title="The Pragmatic Programmer")
 
@@ -214,7 +219,7 @@ class TestOrderHappyPath(unittest.TestCase):
     def test_full_lifecycle_processes_all_events_in_order(self):
         """Simulate 4 events in sequence; each must succeed, email called once per event."""
         consumer = _make_consumer()
-        user = SimpleNamespace(email="alice@example.com", name="Alice")
+        user = SimpleNamespace(email="alice@example.com", username="Alice")
         book = SimpleNamespace(title="Clean Code")
 
         consumer.user_client.get_profile.return_value = user
@@ -243,7 +248,7 @@ class TestOrderCancelPath(unittest.TestCase):
 
     def setUp(self):
         self.consumer = _make_consumer()
-        self.user = SimpleNamespace(email="bob@example.com", name="Bob")
+        self.user = SimpleNamespace(email="bob@example.com", username="Bob")
         self.consumer.user_client.get_profile.return_value = self.user
         self.consumer.book_client.get_book.return_value = SimpleNamespace(title="Refactoring")
 
@@ -289,7 +294,7 @@ class TestOrderFlowResilience(unittest.TestCase):
 
     def test_created_user_email_empty_no_email_and_success(self):
         consumer = _make_consumer()
-        consumer.user_client.get_profile.return_value = SimpleNamespace(email="", name="Ghost")
+        consumer.user_client.get_profile.return_value = SimpleNamespace(email="", username="Ghost")
 
         result = consumer.process_message(
             _msg("order.created", {"user_id": "u-ghost", "order_id": "o-4", "book_ids": [], "due_date": "N/A"})
@@ -301,7 +306,7 @@ class TestOrderFlowResilience(unittest.TestCase):
     def test_created_book_not_found_skips_that_title_but_still_sends_email(self):
         """If one book lookup fails, skip that title but still send email for the rest."""
         consumer = _make_consumer()
-        consumer.user_client.get_profile.return_value = SimpleNamespace(email="u@e.com", name="User")
+        consumer.user_client.get_profile.return_value = SimpleNamespace(email="u@e.com", username="User")
         consumer.book_client.get_book.side_effect = [SimpleNamespace(title="Found Book"), None]
 
         result = consumer.process_message(
@@ -338,7 +343,7 @@ class TestOrderFlowResilience(unittest.TestCase):
     def test_email_service_raises_returns_false(self):
         """If email_service raises, process_message should return False (SQS will redeliver)."""
         consumer = _make_consumer()
-        consumer.user_client.get_profile.return_value = SimpleNamespace(email="u@e.com", name="User")
+        consumer.user_client.get_profile.return_value = SimpleNamespace(email="u@e.com", username="User")
         consumer.book_client.get_book.return_value = SimpleNamespace(title="A Book")
         consumer.email_service.send_order_created.side_effect = RuntimeError("SES down")
 
@@ -369,7 +374,7 @@ class TestOrderFlowResilience(unittest.TestCase):
     def test_multiple_consecutive_events_each_succeed_independently(self):
         """Each message is independent; one failure must not affect the next."""
         consumer = _make_consumer()
-        user = SimpleNamespace(email="u@e.com", name="User")
+        user = SimpleNamespace(email="u@e.com", username="User")
         consumer.user_client.get_profile.return_value = user
         consumer.book_client.get_book.return_value = SimpleNamespace(title="Go Programming")
 
@@ -385,7 +390,7 @@ class TestOrderFlowResilience(unittest.TestCase):
 
     def test_overdue_status_sent_correctly(self):
         consumer = _make_consumer()
-        consumer.user_client.get_profile.return_value = SimpleNamespace(email="u@e.com", name="User")
+        consumer.user_client.get_profile.return_value = SimpleNamespace(email="u@e.com", username="User")
 
         result = consumer.process_message(
             _msg("order.status_updated", {"user_id": "u-1", "order_id": "o-overdue", "new_status": "OVERDUE"})
