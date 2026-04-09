@@ -29,31 +29,14 @@ resources:
   - configmaps/notification-configmap.yaml
   - configmaps/postgres-configmap.yaml
 
-generatorOptions:
-  disableNameSuffixHash: true
-
-secretGenerator:
-  - name: lms-gateway-secret
-    envs:
-      - secrets/gateway.env
-  - name: lms-user-secret
-    envs:
-      - secrets/user.env
-  - name: lms-book-secret
-    envs:
-      - secrets/book.env
-  - name: lms-order-secret
-    envs:
-      - secrets/order.env
-  - name: lms-notification-secret
-    envs:
-      - secrets/notification.env
-  - name: lms-redis-secret
-    envs:
-      - secrets/redis.env
-  - name: lms-postgres-secret
-    envs:
-      - secrets/postgres.env
-  - name: lms-rabbitmq-secret
-    envs:
-      - secrets/rabbitmq.env
+  # Secrets are managed per-environment:
+  # - dev overlay: patches override placeholder values below
+  # - prod: kubectl create secret in cd.yml (GitHub Actions) overrides these
+  - secrets/gateway-secret.yaml
+  - secrets/user-secret.yaml
+  - secrets/book-secret.yaml
+  - secrets/order-secret.yaml
+  - secrets/notification-secret.yaml
+  - secrets/redis-secret.yaml
+  - secrets/postgres-secret.yaml
+  - secrets/rabbitmq-secret.yaml
