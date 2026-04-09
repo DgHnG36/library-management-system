@@ -45,6 +45,7 @@ jobs:
 
   unit:
     name: Run Unit Tests
+    needs: lint
     timeout-minutes: 10
     runs-on: ubuntu-latest
     strategy:
@@ -112,20 +113,36 @@ jobs:
           context: .
           file: ./services/${{ matrix.service }}/Dockerfile
           push: false
+          load: true
           tags: lms/${{ matrix.service }}:ci-temp
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
 
   integration:
     name: Run Integration Tests
     needs: [unit, build]
-    timeout-minutes: 10
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build service images with cache
+        run: |
+          for service in gateway-service user-service book-service order-service notification-service; do
+            docker buildx build \
+              --cache-from "type=gha,scope=$service" \
+              --load \
+              -t "lms/$service:ci-temp" \
+              -f "./services/$service/Dockerfile" \
+              .
+          done
+
       - name: Start docker compose
         run: |
-          docker compose -f ./test/docker-compose.test.yaml up -d --wait --wait-timeout 120
+          docker compose -f ./test/docker-compose.test.yaml up -d --wait --wait-timeout 180
       - name: Run Go Integration Tests
         run: |
           cd ./test/integration
@@ -155,7 +172,7 @@ jobs:
   security:
     name: Run Security Scan
     needs: e2e
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -169,6 +186,20 @@ jobs:
           ]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.service }} image with cache
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./services/${{ matrix.service }}/Dockerfile
+          push: false
+          load: true
+          tags: lms/${{ matrix.service }}:ci-temp
+          cache-from: type=gha,scope=${{ matrix.service }}
+
       - name: Scan ${{ matrix.service }} image with Trivy
         uses: aquasecurity/trivy-action@v0.20.0
         with:

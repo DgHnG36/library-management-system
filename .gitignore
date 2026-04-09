@@ -44,3 +44,4 @@ tmp/
 k8s/**/secrets/*.yaml
 k8s/**/secrets/*.env
 !k8s/**/secrets/*.env.example
+docs/docker-wsl2-troubleshooting.md
