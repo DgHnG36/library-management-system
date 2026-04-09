@@ -163,7 +163,7 @@ jobs:
           go test -v ./...
       - name: Run Python Integration Tests
         run: |
-          pip install -r requirements.txt
+          pip install -r ./services/notification-service/requirements.txt
           pytest ./test/integration -v
       - name: Stop services
         if: always()
