@@ -1,10 +1,16 @@
 name: CD LMS Pipeline
 
 on:
-  workflow_run:
-    workflows: ["CI LMS Pipeline"]
-    branches: [main]
-    types: [completed]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit SHA to deploy (leave empty to use latest main)"
+        required: false
+        default: ""
+  # workflow_run:
+  #   workflows: ["CI LMS Pipeline"]
+  #   branches: [main]
+  #   types: [completed]
 
 env:
   REGISTRY: docker.io
@@ -14,19 +20,30 @@ jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     steps:
-      - name: Checkout commit that triggered CI
+      - name: Resolve commit SHA
+        id: sha
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            SHA="${{ github.event.inputs.sha }}"
+            SHA=${SHA:-${{ github.sha }}}
+          else
+            SHA="${{ github.event.workflow_run.head_sha }}"
+          fi
+          echo "SHA=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Checkout commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ steps.sha.outputs.SHA }}
 
       - name: Set image tag
         id: vars
+        run: echo "TAG=${SHA::7}" >> $GITHUB_OUTPUT
         env:
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: echo "TAG=${HEAD_SHA::7}" >> $GITHUB_OUTPUT
+          SHA: ${{ steps.sha.outputs.SHA }}
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v3
@@ -65,38 +82,38 @@ jobs:
           PROD_AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
           PROD_AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
         run: |
-          mkdir -p k8s/base/secrets
+          mkdir -p k8s/overlays/prod/secrets
 
           printf 'JWT_SECRET=%s\nREDIS_PASSWORD=%s\n' \
             "$PROD_JWT_SECRET" "$PROD_REDIS_PASSWORD" \
-            > k8s/base/secrets/gateway.env
+            > k8s/overlays/prod/secrets/gateway.env
 
           printf 'JWT_SECRET=%s\nDB_PASSWORD=%s\n' \
             "$PROD_JWT_SECRET" "$PROD_DB_PASSWORD" \
-            > k8s/base/secrets/user.env
+            > k8s/overlays/prod/secrets/user.env
 
           printf 'DB_PASSWORD=%s\n' \
             "$PROD_DB_PASSWORD" \
-            > k8s/base/secrets/book.env
+            > k8s/overlays/prod/secrets/book.env
 
           printf 'DB_PASSWORD=%s\nSQS_QUEUE_URL=%s\n' \
             "$PROD_DB_PASSWORD" "$PROD_SQS_QUEUE_URL" \
-            > k8s/base/secrets/order.env
+            > k8s/overlays/prod/secrets/order.env
 
           printf 'SQS_QUEUE_URL=%s\nAWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' \
             "$PROD_SQS_QUEUE_URL" "$PROD_AWS_ACCESS_KEY_ID" "$PROD_AWS_SECRET_ACCESS_KEY" \
-            > k8s/base/secrets/notification.env
+            > k8s/overlays/prod/secrets/notification.env
 
           printf 'REDIS_PASSWORD=%s\n' \
             "$PROD_REDIS_PASSWORD" \
-            > k8s/base/secrets/redis.env
+            > k8s/overlays/prod/secrets/redis.env
 
           printf 'POSTGRES_USER=postgres\nPOSTGRES_PASSWORD=%s\n' \
             "$PROD_DB_PASSWORD" \
-            > k8s/base/secrets/postgres.env
+            > k8s/overlays/prod/secrets/postgres.env
 
           printf 'RABBITMQ_DEFAULT_USER=guest\nRABBITMQ_DEFAULT_PASS=guest\n' \
-            > k8s/base/secrets/rabbitmq.env
+            > k8s/overlays/prod/secrets/rabbitmq.env
 
       - name: Apply kustomization
         run: |

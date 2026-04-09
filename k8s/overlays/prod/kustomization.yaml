@@ -12,28 +12,28 @@ generatorOptions:
 secretGenerator:
   - name: lms-gateway-secret
     envs:
-      - ../../base/secrets/gateway.env
+      - secrets/gateway.env
   - name: lms-user-secret
     envs:
-      - ../../base/secrets/user.env
+      - secrets/user.env
   - name: lms-book-secret
     envs:
-      - ../../base/secrets/book.env
+      - secrets/book.env
   - name: lms-order-secret
     envs:
-      - ../../base/secrets/order.env
+      - secrets/order.env
   - name: lms-notification-secret
     envs:
-      - ../../base/secrets/notification.env
+      - secrets/notification.env
   - name: lms-redis-secret
     envs:
-      - ../../base/secrets/redis.env
+      - secrets/redis.env
   - name: lms-postgres-secret
     envs:
-      - ../../base/secrets/postgres.env
+      - secrets/postgres.env
   - name: lms-rabbitmq-secret
     envs:
-      - ../../base/secrets/rabbitmq.env
+      - secrets/rabbitmq.env
 
 images:
   - name: lms/gateway-service
