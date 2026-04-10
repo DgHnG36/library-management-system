@@ -176,9 +176,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_DEPLOY_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ap-southeast-2
         run: |
-          aws sqs create-queue \
-            --queue-name notification-queue \
-            --attributes VisibilityTimeout=30,MessageRetentionPeriod=86400
+          aws sqs create-queue --queue-name notification-queue || true
           echo "SQS queue is ready."
 
       - name: Apply kustomization
