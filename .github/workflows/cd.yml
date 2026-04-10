@@ -170,6 +170,17 @@ jobs:
           printf 'RABBITMQ_DEFAULT_USER=guest\nRABBITMQ_DEFAULT_PASS=guest\n' \
             > k8s/overlays/prod/secrets/rabbitmq.env
 
+      - name: Ensure SQS queue exists
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-southeast-2
+        run: |
+          aws sqs create-queue \
+            --queue-name notification-queue \
+            --attributes VisibilityTimeout=30,MessageRetentionPeriod=86400
+          echo "SQS queue is ready."
+
       - name: Apply kustomization
         run: |
           kubectl create namespace lms --dry-run=client -o yaml | kubectl apply -f -
@@ -180,17 +191,21 @@ jobs:
           PROD_DB_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
           RDS_HOST: db-instance-aws.cr6s8q0wa2an.ap-southeast-2.rds.amazonaws.com
         run: |
-          # Run a temporary pod inside the cluster (same VPC as RDS) to create databases
           kubectl run rds-init --restart=Never --rm -i \
             --image=postgres:16-alpine \
             --namespace=lms \
             --env="PGPASSWORD=${PROD_DB_PASSWORD}" \
-            --command -- psql \
-              -h "${RDS_HOST}" \
-              -U postgres \
-              -c "SELECT 'CREATE DATABASE lms_user_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'lms_user_db') \gexec" \
-              -c "SELECT 'CREATE DATABASE lms_book_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'lms_book_db') \gexec" \
-              -c "SELECT 'CREATE DATABASE lms_order_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'lms_order_db') \gexec"
+            --env="RDS_HOST=${RDS_HOST}" \
+            --command -- sh -c \
+            'psql -h "$RDS_HOST" -U postgres -c "SELECT 1" > /dev/null
+            for db in lms_user_db lms_book_db lms_order_db; do
+              if psql -h "$RDS_HOST" -U postgres -lqt | grep -qw "$db"; then
+                echo "$db: already exists, skipping"
+              else
+                psql -h "$RDS_HOST" -U postgres -c "CREATE DATABASE $db"
+                echo "$db: created"
+              fi
+            done'
           echo "All RDS databases are ready."
 
       - name: Wait for rollout
