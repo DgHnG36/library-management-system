@@ -19,4 +19,6 @@ data:
   DB_CONN_MAX_LIFETIME: "5m"
   USER_SERVICE_ADDR: "lms-user-service:40041"
   BOOK_SERVICE_ADDR: "lms-book-service:40042"
+  RABBITMQ_URL: "amqp://guest:guest@lms-rabbitmq:5672/"
   RABBITMQ_EXCHANGE: "order-events"
+  BROKER_TYPE: "rabbitmq"

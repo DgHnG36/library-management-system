@@ -31,6 +31,13 @@ type Config struct {
 		URL      string
 		Exchange string
 	}
+	SQS struct {
+		QueueURL        string
+		Region          string
+		AccessKeyID     string
+		SecretAccessKey string
+	}
+	BrokerType string // "rabbitmq" or "sqs"
 }
 
 type ConfigLoader interface {

@@ -45,6 +45,15 @@ func NewConfigLoader() (ConfigLoader, error) {
 	cfg.RabbitMQ.URL = getEnvStrOrDefault("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 	cfg.RabbitMQ.Exchange = getEnvStrOrDefault("RABBITMQ_EXCHANGE", "order-events")
 
+	// SQS settings
+	cfg.SQS.QueueURL = getEnvStrOrDefault("SQS_QUEUE_URL", "")
+	cfg.SQS.Region = getEnvStrOrDefault("AWS_REGION", "ap-southeast-2")
+	cfg.SQS.AccessKeyID = getEnvStrOrDefault("AWS_ACCESS_KEY_ID", "")
+	cfg.SQS.SecretAccessKey = getEnvStrOrDefault("AWS_SECRET_ACCESS_KEY", "")
+
+	// Broker type: "rabbitmq" (default for dev/test) or "sqs" (prod)
+	cfg.BrokerType = getEnvStrOrDefault("BROKER_TYPE", "rabbitmq")
+
 	return &envLoader{cfg: cfg}, nil
 }
 

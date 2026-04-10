@@ -108,6 +108,7 @@ patches:
       data:
         DB_HOST: "db-instance-aws.cr6s8q0wa2an.ap-southeast-2.rds.amazonaws.com"
         DB_SSL_MODE: "require"
+        BROKER_TYPE: "sqs"
 
   # ── SQS endpoint — replace with actual queue URL ──────────────────────────
   # Find it: aws sqs get-queue-url --queue-name notification-queue

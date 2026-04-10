@@ -70,19 +70,37 @@ func main() {
 		},
 	})
 
-	// Initialize RabbitMQ connection
-	publisher, err := broker.NewRabbitMQPublisher(
-		cfg.RabbitMQ.URL,
-		cfg.RabbitMQ.Exchange,
-		rootLogger,
-	)
-	if err != nil {
-		rootLogger.Fatal("Failed to connect to RabbitMQ", err, logger.Fields{
-			"url": cfg.RabbitMQ.URL,
-		})
+	// Initialize message broker (rabbitmq for dev/test, sqs for prod)
+	var publisher broker.Publisher
+	switch cfg.BrokerType {
+	case "sqs":
+		publisher, err = broker.NewSQSPublisher(
+			cfg.SQS.Region,
+			cfg.SQS.QueueURL,
+			cfg.SQS.AccessKeyID,
+			cfg.SQS.SecretAccessKey,
+			rootLogger,
+		)
+		if err != nil {
+			rootLogger.Fatal("Failed to create SQS publisher", err, logger.Fields{
+				"queue_url": cfg.SQS.QueueURL,
+			})
+		}
+		rootLogger.Info("Connected to SQS", logger.Fields{"queue_url": cfg.SQS.QueueURL})
+	default:
+		publisher, err = broker.NewRabbitMQPublisher(
+			cfg.RabbitMQ.URL,
+			cfg.RabbitMQ.Exchange,
+			rootLogger,
+		)
+		if err != nil {
+			rootLogger.Fatal("Failed to connect to RabbitMQ", err, logger.Fields{
+				"url": cfg.RabbitMQ.URL,
+			})
+		}
+		rootLogger.Info("Connected to RabbitMQ", logger.Fields{"exchange": cfg.RabbitMQ.Exchange})
 	}
 	defer publisher.Close()
-	rootLogger.Info("Connected to RabbitMQ", logger.Fields{"exchange": cfg.RabbitMQ.Exchange})
 
 	// Initialize other services gRPC clients
 	userConn, err := grpc.NewClient(

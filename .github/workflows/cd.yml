@@ -134,8 +134,8 @@ jobs:
           PROD_REDIS_PASSWORD: ${{ secrets.PROD_REDIS_PASSWORD }}
           PROD_DB_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
           PROD_SQS_QUEUE_URL: ${{ secrets.PROD_SQS_QUEUE_URL }}
-          PROD_AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
-          PROD_AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          PROD_AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_DEPLOY_ACCESS_KEY_ID }}
+          PROD_AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_DEPLOY_SECRET_ACCESS_KEY }}
         run: |
           mkdir -p k8s/overlays/prod/secrets
 
@@ -151,8 +151,8 @@ jobs:
             "$PROD_DB_PASSWORD" \
             > k8s/overlays/prod/secrets/book.env
 
-          printf 'DB_PASSWORD=%s\nSQS_QUEUE_URL=%s\n' \
-            "$PROD_DB_PASSWORD" "$PROD_SQS_QUEUE_URL" \
+          printf 'DB_PASSWORD=%s\nSQS_QUEUE_URL=%s\nAWS_REGION=ap-southeast-2\nAWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' \
+            "$PROD_DB_PASSWORD" "$PROD_SQS_QUEUE_URL" "$PROD_AWS_ACCESS_KEY_ID" "$PROD_AWS_SECRET_ACCESS_KEY" \
             > k8s/overlays/prod/secrets/order.env
 
           printf 'SQS_QUEUE_URL=%s\nAWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' \
