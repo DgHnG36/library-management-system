@@ -175,6 +175,24 @@ jobs:
           kubectl create namespace lms --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -k k8s/overlays/prod
 
+      - name: Ensure RDS databases exist
+        env:
+          PROD_DB_PASSWORD: ${{ secrets.PROD_DB_PASSWORD }}
+          RDS_HOST: db-instance-aws.cr6s8q0wa2an.ap-southeast-2.rds.amazonaws.com
+        run: |
+          # Run a temporary pod inside the cluster (same VPC as RDS) to create databases
+          kubectl run rds-init --restart=Never --rm -i \
+            --image=postgres:16-alpine \
+            --namespace=lms \
+            --env="PGPASSWORD=${PROD_DB_PASSWORD}" \
+            --command -- psql \
+              -h "${RDS_HOST}" \
+              -U postgres \
+              -c "SELECT 'CREATE DATABASE lms_user_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'lms_user_db') \gexec" \
+              -c "SELECT 'CREATE DATABASE lms_book_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'lms_book_db') \gexec" \
+              -c "SELECT 'CREATE DATABASE lms_order_db' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'lms_order_db') \gexec"
+          echo "All RDS databases are ready."
+
       - name: Wait for rollout
         run: |
           FAILED=""
@@ -191,7 +209,7 @@ jobs:
       - name: Collect diagnostics on failure
         if: failure()
         run: |
-          echo "===== Pod status ====="
+          echo "%%% Pod status %%%%"
           kubectl get pods -n lms -o wide
           declare -A APP_LABEL=(
             [gateway-service]=gateway
@@ -202,7 +220,7 @@ jobs:
           )
           for svc in gateway-service user-service book-service order-service notification-service; do
             echo ""
-            echo "===== $svc ====="
+            echo "%%% $svc %%%%"
             kubectl describe deployment/lms-${svc} -n lms 2>/dev/null | tail -20 || true
             LABEL="${APP_LABEL[$svc]}"
             POD=$(kubectl get pod -n lms -l app=${LABEL} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
@@ -217,7 +235,6 @@ jobs:
         if: failure()
         run: |
           for svc in gateway-service user-service book-service order-service notification-service; do
-            # Only rollback if the deployment is currently degraded
             READY=$(kubectl get deployment/lms-${svc} -n lms -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)
             DESIRED=$(kubectl get deployment/lms-${svc} -n lms -o jsonpath='{.spec.replicas}' 2>/dev/null || echo 1)
             if [[ "$READY" -lt "$DESIRED" ]]; then

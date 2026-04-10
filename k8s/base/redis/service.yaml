@@ -12,5 +12,5 @@ spec:
   ports:
     - name: redis
       protocol: TCP
-      port: 63379
+      port: 6379
       targetPort: 6379
