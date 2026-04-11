@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-/* ─── Mock Repository ─────────────────────────────────────────────────────── */
+/* MOCK REPOSITORY */
 
 /* FailingBookRepository returns a fixed error for every method. */
 type FailingBookRepository struct {
@@ -132,7 +132,7 @@ func (m *MockBookRepository) Delete(_ context.Context, ids []string) error {
 	return nil
 }
 
-/* ─── Shared test helpers ─────────────────────────────────────────────────── */
+/* SHARED TEST HELPERS */
 
 var testLog = logger.DefaultNewLogger()
 
@@ -146,9 +146,9 @@ func newTestSvc() (*applications.BookService, *MockBookRepository) {
 	return svc, repo
 }
 
-/* ─── TestBookService_GetBook ─────────────────────────────────────────────── */
-/* Verifies: lookup by ID, lookup by title, not-found → Internal, both args
-   empty → InvalidArgument. */
+/* TestBookService_GetBook */
+/* Verifies: lookup by ID, lookup by title, not-found -> Internal, both args
+   empty -> InvalidArgument. */
 
 func TestBookService_GetBook(t *testing.T) {
 	seed := &models.Book{
@@ -209,7 +209,7 @@ func TestBookService_GetBook(t *testing.T) {
 	}
 }
 
-/* ─── TestBookService_ListBooks ───────────────────────────────────────────── */
+/* TestBookService_ListBooks */
 /* Verifies: all books returned, filter by searchQuery, filter by category,
    invalid page/limit values default to 1/10. */
 
@@ -291,7 +291,7 @@ func TestBookService_ListBooks(t *testing.T) {
 	}
 }
 
-/* ─── TestBookService_CreateBooks ─────────────────────────────────────────── */
+/* TestBookService_CreateBooks */
 /* Verifies: single creation with generated ID, multiple books with distinct
    IDs, empty title rejected with Internal (repo layer). */
 
@@ -352,9 +352,9 @@ func TestBookService_CreateBooks(t *testing.T) {
 	}
 }
 
-/* ─── TestBookService_UpdateBook ──────────────────────────────────────────── */
+/* TestBookService_UpdateBook */
 /* Verifies: all fields updated, blank fields keep original values, not-found
-   → Internal. */
+   -> Internal. */
 
 func TestBookService_UpdateBook(t *testing.T) {
 	tests := []struct {
@@ -427,8 +427,8 @@ func TestBookService_UpdateBook(t *testing.T) {
 	}
 }
 
-/* ─── TestBookService_DeleteBooks ─────────────────────────────────────────── */
-/* Verifies: successful deletion empties repo, non-existent ID → Internal. */
+/* TestBookService_DeleteBooks */
+/* Verifies: successful deletion empties repo, non-existent ID -> Internal. */
 
 func TestBookService_DeleteBooks(t *testing.T) {
 	tests := []struct {
@@ -475,9 +475,9 @@ func TestBookService_DeleteBooks(t *testing.T) {
 	}
 }
 
-/* ─── TestBookService_CheckAvailability ───────────────────────────────────── */
+/* TestBookService_CheckAvailability */
 /* Verifies: available book returns true + correct qty, zero qty returns false,
-   not-found → Internal. */
+   not-found -> Internal. */
 
 func TestBookService_CheckAvailability(t *testing.T) {
 	tests := []struct {
@@ -535,9 +535,9 @@ func TestBookService_CheckAvailability(t *testing.T) {
 	}
 }
 
-/* ─── TestBookService_UpdateBookQuantity ──────────────────────────────────── */
+/* TestBookService_UpdateBookQuantity */
 /* Verifies: correct new quantity after decrement/increment, non-existent book
-   → Internal. */
+   -> Internal. */
 
 func TestBookService_UpdateBookQuantity(t *testing.T) {
 	tests := []struct {

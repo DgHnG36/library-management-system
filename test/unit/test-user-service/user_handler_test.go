@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ─── Handler test helpers ─────────────────────────────────────────────────────
+/* HANDLER TEST HELPERS */
 
 func newHandlerSetup() (*handlers.UserHandler, *MockUserRepository) {
 	repo := NewMockUserRepository()
@@ -29,9 +29,9 @@ func ctxWithRole(role string) context.Context {
 	return context.WithValue(context.Background(), interceptor.ContextKeyUserRole, role)
 }
 
-// ─── TestUserHandler_Register ─────────────────────────────────────────────────
-// Verifies: required-field validation (username/password/email), correct Status/Message/UserId
-// in response, duplicate username detection.
+/* TestUserHandler_Register */
+/* Verifies: required-field validation (username/password/email), correct Status/Message/UserId
+   in response, duplicate username detection. */
 
 func TestUserHandler_Register(t *testing.T) {
 	tests := []struct {
@@ -97,9 +97,9 @@ func TestUserHandler_Register(t *testing.T) {
 	}
 }
 
-// ─── TestUserHandler_Login ────────────────────────────────────────────────────
-// Verifies: oneof identifier (username vs email) is routed correctly, Status/Message/
-// tokens/User fields in response, required-field validation, wrong credential errors.
+/* TestUserHandler_Login */
+/* Verifies: oneof identifier (username vs email) is routed correctly, Status/Message/
+   tokens/User fields in response, required-field validation, wrong credential errors. */
 
 func TestUserHandler_Login(t *testing.T) {
 	tests := []struct {
@@ -182,8 +182,8 @@ func TestUserHandler_Login(t *testing.T) {
 	}
 }
 
-// ─── TestUserHandler_GetProfile ───────────────────────────────────────────────
-// Verifies: user proto fields are correctly mapped from model, ID required, not-found.
+/* TestUserHandler_GetProfile */
+/* Verifies: user proto fields are correctly mapped from model, ID required, not-found. */
 
 func TestUserHandler_GetProfile(t *testing.T) {
 	tests := []struct {
@@ -248,8 +248,8 @@ func TestUserHandler_GetProfile(t *testing.T) {
 	}
 }
 
-// ─── TestUserHandler_UpdateProfile ────────────────────────────────────────────
-// Verifies: updated fields reflected in response, unchanged fields preserved, ID required.
+/* TestUserHandler_UpdateProfile */
+/* Verifies: updated fields reflected in response, unchanged fields preserved, ID required. */
 
 func TestUserHandler_UpdateProfile(t *testing.T) {
 	tests := []struct {
@@ -317,9 +317,9 @@ func TestUserHandler_UpdateProfile(t *testing.T) {
 	}
 }
 
-// ─── TestUserHandler_UpdateVIPAccount ─────────────────────────────────────────
-// Verifies: admin role required (from "X-User-Role" context), VIP status reflected in
-// response, non-admin denied, ID required.
+/* TestUserHandler_UpdateVIPAccount */
+/* Verifies: admin role required (from "X-User-Role" context), VIP status reflected in
+   response, non-admin denied, ID required. */
 
 func TestUserHandler_UpdateVIPAccount(t *testing.T) {
 	tests := []struct {
@@ -398,9 +398,9 @@ func TestUserHandler_UpdateVIPAccount(t *testing.T) {
 	}
 }
 
-// ─── TestUserHandler_ListUsers ────────────────────────────────────────────────
-// Verifies: admin/manager role required (from "X-User-Role" context), TotalCount matches
-// number of registered users, non-admin denied, empty repo returns empty list.
+/* TestUserHandler_ListUsers */
+/* Verifies: admin/manager role required (from "X-User-Role" context), TotalCount matches
+   number of registered users, non-admin denied, empty repo returns empty list. */
 
 func TestUserHandler_ListUsers(t *testing.T) {
 	tests := []struct {
@@ -471,9 +471,9 @@ func TestUserHandler_ListUsers(t *testing.T) {
 	}
 }
 
-// ─── TestUserHandler_DeleteUsers ──────────────────────────────────────────────
-// Verifies: admin role required (from "X-User-Role" context), Status/Message in response,
-// user removed from repo, non-admin denied, empty IDs rejected.
+/* TestUserHandler_DeleteUsers */
+/* Verifies: admin role required (from "X-User-Role" context), Status/Message in response,
+   user removed from repo, non-admin denied, empty IDs rejected. */
 
 func TestUserHandler_DeleteUsers(t *testing.T) {
 	tests := []struct {
@@ -539,9 +539,9 @@ func TestUserHandler_DeleteUsers(t *testing.T) {
 	}
 }
 
-// ─── TestUserHandler_RefreshToken ─────────────────────────────────────────────
-// Verifies: refresh token required, valid refresh token produces new token pair,
-// "X-User-ID" context value used for token lookup.
+/* TestUserHandler_RefreshToken */
+/* Verifies: refresh token required, valid refresh token produces new token pair,
+   "X-User-ID" context value used for token lookup. */
 
 func TestUserHandler_RefreshToken(t *testing.T) {
 	tests := []struct {

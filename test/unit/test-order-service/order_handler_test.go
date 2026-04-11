@@ -17,7 +17,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-/* ─── Handler test helpers ─────────────────────────────────────────────────── */
+/* HANDLER TEST HELPERS */
 
 func newOrderHandlerForTest() (*handlers.OrderHandler, *MockOrderRepository, *MockBookServiceClient, *MockUserServiceClient) {
 	repo := NewMockOrderRepository()
@@ -29,9 +29,9 @@ func newOrderHandlerForTest() (*handlers.OrderHandler, *MockOrderRepository, *Mo
 	return handler, repo, bookClient, userClient
 }
 
-/* ─── TestOrderHandler_CreateOrder ───────────────────────────────────────── */
+/* TestOrderHandler_CreateOrder */
 /* Verifies: order created with PENDING status, missing user_id or book_ids
-   → InvalidArgument. */
+   -> InvalidArgument. */
 
 func TestOrderHandler_CreateOrder(t *testing.T) {
 	tests := []struct {
@@ -97,8 +97,8 @@ func TestOrderHandler_CreateOrder(t *testing.T) {
 	}
 }
 
-/* ─── TestOrderHandler_GetOrder ───────────────────────────────────────────── */
-/* Verifies: order ID in response matches request, empty order_id → InvalidArgument. */
+/* TestOrderHandler_GetOrder */
+/* Verifies: order ID in response matches request, empty order_id -> InvalidArgument. */
 
 func TestOrderHandler_GetOrder(t *testing.T) {
 	tests := []struct {
@@ -153,9 +153,9 @@ func TestOrderHandler_GetOrder(t *testing.T) {
 	}
 }
 
-/* ─── TestOrderHandler_ListMyOrders ───────────────────────────────────────── */
+/* TestOrderHandler_ListMyOrders */
 /* Verifies: TotalCount equals seeded orders for user, missing user_id
-   → InvalidArgument. */
+   -> InvalidArgument. */
 
 func TestOrderHandler_ListMyOrders(t *testing.T) {
 	tests := []struct {
@@ -207,7 +207,7 @@ func TestOrderHandler_ListMyOrders(t *testing.T) {
 	}
 }
 
-/* ─── TestOrderHandler_ListAllOrders ──────────────────────────────────────── */
+/* TestOrderHandler_ListAllOrders */
 /* Verifies: TotalCount equals all seeded orders. */
 
 func TestOrderHandler_ListAllOrders(t *testing.T) {
@@ -252,9 +252,9 @@ func TestOrderHandler_ListAllOrders(t *testing.T) {
 	}
 }
 
-/* ─── TestOrderHandler_UpdateOrderStatus ─────────────────────────────────── */
+/* TestOrderHandler_UpdateOrderStatus */
 /* Verifies: updated status reflected in response, empty order_id or unspecified
-   status → InvalidArgument. */
+   status -> InvalidArgument. */
 
 func TestOrderHandler_UpdateOrderStatus(t *testing.T) {
 	tests := []struct {
@@ -317,9 +317,9 @@ func TestOrderHandler_UpdateOrderStatus(t *testing.T) {
 	}
 }
 
-/* ─── TestOrderHandler_CancelOrder ───────────────────────────────────────── */
-/* Verifies: owner cancels pending order → status CANCELED, empty order_id or
-   user_id → InvalidArgument, non-owner → FailedPrecondition. */
+/* TestOrderHandler_CancelOrder */
+/* Verifies: owner cancels pending order -> status CANCELED, empty order_id or
+   user_id -> InvalidArgument, non-owner -> FailedPrecondition. */
 
 func TestOrderHandler_CancelOrder(t *testing.T) {
 	tests := []struct {
@@ -385,4 +385,3 @@ func TestOrderHandler_CancelOrder(t *testing.T) {
 		})
 	}
 }
-

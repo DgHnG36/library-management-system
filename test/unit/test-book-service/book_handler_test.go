@@ -17,7 +17,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-/* ─── Handler test helpers ─────────────────────────────────────────────────── */
+/* HELPER HANDLER FOR TESTING */
 
 func newBookHandlerForTest() (*handlers.BookHandler, *MockBookRepository) {
 	repo := NewMockBookRepository()
@@ -31,8 +31,8 @@ func ctxWithRole(role string) context.Context {
 	return context.WithValue(context.Background(), interceptor.ContextKeyUserRole, role)
 }
 
-/* ─── TestBookHandler_GetBook ─────────────────────────────────────────────── */
-/* Verifies: lookups by ID and by title succeed, missing identifier → InvalidArgument. */
+/* TestBookHandler_GetBook */
+/* Verifies: lookups by ID and by title succeed, missing identifier -> InvalidArgument. */
 
 func TestBookHandler_GetBook(t *testing.T) {
 	tests := []struct {
@@ -98,7 +98,7 @@ func TestBookHandler_GetBook(t *testing.T) {
 	}
 }
 
-/* ─── TestBookHandler_ListBooks ───────────────────────────────────────────── */
+/* TestBookHandler_ListBooks */
 /* Verifies: all books returned when no filter, count equals seeded data. */
 
 func TestBookHandler_ListBooks(t *testing.T) {
@@ -161,9 +161,9 @@ func TestBookHandler_ListBooks(t *testing.T) {
 	}
 }
 
-/* ─── TestBookHandler_CreateBooks ─────────────────────────────────────────── */
-/* Verifies: single book created (SuccessCount=1), empty payload → InvalidArgument,
-   no role in context → PermissionDenied. */
+/* TestBookHandler_CreateBooks */
+/* Verifies: single book created (SuccessCount=1), empty payload -> InvalidArgument,
+   no role in context -> PermissionDenied. */
 
 func TestBookHandler_CreateBooks(t *testing.T) {
 	payload := []*bookv1.CreateBookPayload{
@@ -217,9 +217,9 @@ func TestBookHandler_CreateBooks(t *testing.T) {
 	}
 }
 
-/* ─── TestBookHandler_UpdateBook ──────────────────────────────────────────── */
-/* Verifies: title updated in response, missing ID → InvalidArgument,
-   no role → PermissionDenied. */
+/* TestBookHandler_UpdateBook */
+/* Verifies: title updated in response, missing ID -> InvalidArgument,
+   no role -> PermissionDenied. */
 
 func TestBookHandler_UpdateBook(t *testing.T) {
 	tests := []struct {
@@ -279,9 +279,9 @@ func TestBookHandler_UpdateBook(t *testing.T) {
 	}
 }
 
-/* ─── TestBookHandler_DeleteBooks ─────────────────────────────────────────── */
-/* Verifies: Status 200 + repo empty after delete, empty IDs → InvalidArgument,
-   no role → PermissionDenied. */
+/* TestBookHandler_DeleteBooks */
+/* Verifies: Status 200 + repo empty after delete, empty IDs -> InvalidArgument,
+   no role -> PermissionDenied. */
 
 func TestBookHandler_DeleteBooks(t *testing.T) {
 	tests := []struct {
@@ -340,9 +340,9 @@ func TestBookHandler_DeleteBooks(t *testing.T) {
 	}
 }
 
-/* ─── TestBookHandler_CheckAvailability ───────────────────────────────────── */
+/* TestBookHandler_CheckAvailability */
 /* Verifies: availability flag and quantity returned correctly, missing book_id
-   → InvalidArgument, no role → PermissionDenied. */
+   -> InvalidArgument, no role -> PermissionDenied. */
 
 func TestBookHandler_CheckAvailability(t *testing.T) {
 	tests := []struct {
@@ -400,9 +400,9 @@ func TestBookHandler_CheckAvailability(t *testing.T) {
 	}
 }
 
-/* ─── TestBookHandler_UpdateBookQuantity ──────────────────────────────────── */
-/* Verifies: success=true and new quantity after change, missing book_id
-   → InvalidArgument, no role → PermissionDenied. */
+/* TestBookHandler_UpdateBookQuantity */
+/* Verifies: success=true and new quantity after change, missing book_id -> InvalidArgument,
+   no role -> PermissionDenied. */
 
 func TestBookHandler_UpdateBookQuantity(t *testing.T) {
 	tests := []struct {

@@ -15,10 +15,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ─── Mock Repository ────────────────────────────────────────────────────────
+/* MOCK REPOSITORY */
 
-// MockUserRepository implements repository.UserRepository for unit tests.
-// Shared across user_service_test.go and user_handler_test.go (same package).
 type MockUserRepository struct {
 	users  map[string]*models.User
 	tokens map[string]*models.UserToken
@@ -70,8 +68,6 @@ func (m *MockUserRepository) UpdateVIPStatus(_ context.Context, id string, isVip
 	return nil
 }
 
-// List returns all users when role is empty or GUEST (proto zero-value = "no filter"),
-// otherwise filters by the specified role.
 func (m *MockUserRepository) List(_ context.Context, _, _ int32, _ string, _ bool, role models.UserRole) ([]*models.User, int32, error) {
 	result := make([]*models.User, 0)
 	for _, u := range m.users {
@@ -112,7 +108,7 @@ func (m *MockUserRepository) DeleteRefreshToken(_ context.Context, hash string) 
 	return nil
 }
 
-// ─── Shared test helpers ─────────────────────────────────────────────────────
+/* SHARED TESTS HELPERS */
 
 var testLog = logger.DefaultNewLogger()
 
@@ -126,8 +122,8 @@ func newTestSvc() (*applications.UserService, *MockUserRepository) {
 	return svc, repo
 }
 
-// ─── TestUserService_Register ─────────────────────────────────────────────────
-// Verifies: password hashing, default field values, duplicate detection, timestamps.
+/* TestUserService_Register
+   Verifies: password hashing, default field values, duplicate detection, timestamps. */
 
 func TestUserService_Register(t *testing.T) {
 	tests := []struct {
@@ -212,8 +208,8 @@ func TestUserService_Register(t *testing.T) {
 	}
 }
 
-// ─── TestUserService_Login ────────────────────────────────────────────────────
-// Verifies: login by username, login by email, wrong password, user not found, inactive account.
+/* TestUserService_Login
+   Verifies: login by username, login by email, wrong password, user not found, inactive account. */
 
 func TestUserService_Login(t *testing.T) {
 	const plainPwd = "p@ssw0rd"
@@ -288,8 +284,8 @@ func TestUserService_Login(t *testing.T) {
 	}
 }
 
-// ─── TestUserService_GetProfile ───────────────────────────────────────────────
-// Verifies: existing user returns correct fields, missing ID returns NotFound.
+/* TestUserService_GetProfile
+   Verifies: existing user returns correct fields, missing ID returns NotFound. */
 
 func TestUserService_GetProfile(t *testing.T) {
 	tests := []struct {
@@ -345,9 +341,9 @@ func TestUserService_GetProfile(t *testing.T) {
 	}
 }
 
-// ─── TestUserService_UpdateProfile ────────────────────────────────────────────
-// Verifies: each field updated independently, unchanged fields preserved,
-// duplicate username/email rejected, user not found.
+/* TestUserService_UpdateProfile
+   Verifies: each field updated independently, unchanged fields preserved,
+   duplicate username/email rejected, user not found. */
 
 func TestUserService_UpdateProfile(t *testing.T) {
 	tests := []struct {
@@ -431,8 +427,8 @@ func TestUserService_UpdateProfile(t *testing.T) {
 	}
 }
 
-// ─── TestUserService_UpdateVIPAccount ─────────────────────────────────────────
-// Verifies: VIP status toggle, returned value matches requested value, user not found.
+/* TestUserService_UpdateVIPAccount
+   Verifies: VIP status toggle, returned value matches requested value, user not found. */
 
 func TestUserService_UpdateVIPAccount(t *testing.T) {
 	tests := []struct {
@@ -484,9 +480,9 @@ func TestUserService_UpdateVIPAccount(t *testing.T) {
 	}
 }
 
-// ─── TestUserService_ListUsers ────────────────────────────────────────────────
-// Verifies: admin/manager can list users; registered user/guest is denied;
-// total count reflects the number of users in the repo.
+/* TestUserService_ListUsers
+   Verifies: admin/manager can list users; registered user/guest is denied;
+   total count reflects the number of users in the repo. */
 
 func TestUserService_ListUsers(t *testing.T) {
 	tests := []struct {
@@ -545,8 +541,8 @@ func TestUserService_ListUsers(t *testing.T) {
 	}
 }
 
-// ─── TestUserService_DeleteUsers ──────────────────────────────────────────────
-// Verifies: admin deletes users (and they are removed from repo); non-admin is denied.
+/* TestUserService_DeleteUsers
+   Verifies: admin deletes users (and they are removed from repo); non-admin is denied. */
 
 func TestUserService_DeleteUsers(t *testing.T) {
 	tests := []struct {

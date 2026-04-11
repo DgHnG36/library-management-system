@@ -12,7 +12,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// contextKey is an unexported type for context keys in this package.
 type contextKey string
 
 const (

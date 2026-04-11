@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-/* ─── Mock Repository ─────────────────────────────────────────────────────── */
+/* MOCK REPOSITORY */
 
 /*
 MockOrderRepository is an in-memory order store for unit tests.
@@ -115,7 +115,7 @@ func (m *MockOrderRepository) Cancel(_ context.Context, orderID, userID, reason 
 	return nil
 }
 
-/* ─── Mock gRPC Clients ───────────────────────────────────────────────────── */
+/* MOCK gRPC CLIENTS */
 
 type MockBookServiceClient struct {
 	books map[string]*bookv1.Book
@@ -222,7 +222,7 @@ func (m *MockPublisher) Publish(_ string, _ map[string]interface{}) error { retu
 
 func (m *MockPublisher) Close() {}
 
-/* ─── Shared test helpers ─────────────────────────────────────────────────── */
+/* SHARED TESTS HELPERS */
 
 var testLog = logger.DefaultNewLogger()
 
@@ -239,8 +239,8 @@ func newTestSvc() (*applications.OrderService, *MockOrderRepository, *MockBookSe
 	return svc, repo, bookClient, userClient
 }
 
-/* ─── TestOrderService_CreateOrder ───────────────────────────────────────── */
-/* Verifies: order created with correct fields, book unavailable → FailedPrecondition. */
+/* TestOrderService_CreateOrder */
+/* Verifies: order created with correct fields, book unavailable -> FailedPrecondition. */
 
 func TestOrderService_CreateOrder(t *testing.T) {
 	tests := []struct {
@@ -296,9 +296,9 @@ func TestOrderService_CreateOrder(t *testing.T) {
 	}
 }
 
-/* ─── TestOrderService_GetOrder ───────────────────────────────────────────── */
-/* Verifies: order+user+books returned for valid ID, not-found → NotFound,
-   book service error → Internal, user service error → Internal. */
+/* TestOrderService_GetOrder */
+/* Verifies: order+user+books returned for valid ID, not-found -> NotFound,
+   book service error -> Internal, user service error -> Internal. */
 
 func TestOrderService_GetOrder(t *testing.T) {
 	tests := []struct {
@@ -381,7 +381,7 @@ func TestOrderService_GetOrder(t *testing.T) {
 	}
 }
 
-/* ─── TestOrderService_ListMyOrders ───────────────────────────────────────── */
+/* TestOrderService_ListMyOrders */
 /* Verifies: all user orders returned, filtered by status returns subset. */
 
 func TestOrderService_ListMyOrders(t *testing.T) {
@@ -440,7 +440,7 @@ func TestOrderService_ListMyOrders(t *testing.T) {
 	}
 }
 
-/* ─── TestOrderService_ListAllOrders ──────────────────────────────────────── */
+/* TestOrderService_ListAllOrders */
 /* Verifies: filter by status + userID returns exact match. */
 
 func TestOrderService_ListAllOrders(t *testing.T) {
@@ -499,9 +499,9 @@ func TestOrderService_ListAllOrders(t *testing.T) {
 	}
 }
 
-/* ─── TestOrderService_UpdateOrderStatus ─────────────────────────────────── */
+/* TestOrderService_UpdateOrderStatus */
 /* Verifies: status update reflected in returned order, returned status triggers
-   penalty calculation, not-found → Internal. */
+   penalty calculation, not-found -> Internal. */
 
 func TestOrderService_UpdateOrderStatus(t *testing.T) {
 	tests := []struct {
@@ -573,9 +573,9 @@ func TestOrderService_UpdateOrderStatus(t *testing.T) {
 	}
 }
 
-/* ─── TestOrderService_CancelOrder ───────────────────────────────────────── */
-/* Verifies: owner can cancel pending order → status CANCELED, non-owner or
-   non-pending → FailedPrecondition. */
+/* TestOrderService_CancelOrder */
+/* Verifies: owner can cancel pending order -> status CANCELED, non-owner or
+   non-pending -> FailedPrecondition. */
 
 func TestOrderService_CancelOrder(t *testing.T) {
 	tests := []struct {

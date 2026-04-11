@@ -12,7 +12,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// contextKey is an unexported type for context keys in this package.
+/*
+contextKey is a custom type to avoid potential collisions with other context keys in the application.
+*/
 type contextKey string
 
 const (
@@ -20,9 +22,11 @@ const (
 	ContextKeyUserID   contextKey = "X-User-ID"
 )
 
-// MetadataInterceptor extracts well-known gRPC incoming metadata keys
-// (x-user-role, x-user-id) and injects them as context values so that
-// handler code can read them via ctx.Value(ContextKeyUserRole) etc.
+/*
+	INTERCEPTOR
+
+Extract metadata from incoming gRPC requests and inject it into the context for use in handlers. This allows us to access user information (like role and ID) in our business logic without coupling it to the transport layer. Additionally, we have logging and recovery interceptors to enhance observability and robustness of our gRPC server.
+*/
 func MetadataInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if md, ok := metadata.FromIncomingContext(ctx); ok {
