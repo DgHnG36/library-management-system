@@ -10,7 +10,7 @@
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=flat&logo=redis&logoColor=white)](https://redis.io/)
 [![Prometheus](https://img.shields.io/badge/Prometheus-monitoring-E6522C?style=flat&logo=prometheus&logoColor=white)](https://prometheus.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Status](https://img.shields.io/badge/status-in%20development-orange?style=flat)]()
+[![Release](https://img.shields.io/badge/release-v1.0.0-brightgreen?style=flat)]()
 
 ---
 
