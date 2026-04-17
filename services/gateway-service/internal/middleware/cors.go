@@ -51,7 +51,7 @@ func (m *CORSMiddleware) Handle() gin.HandlerFunc {
 }
 
 func newDefaultCORSMiddleware(maxAge time.Duration) *CORSMiddleware {
-	allowedOrigins := []string{"http://localhost:5173"} // Fix later after deploy to cloud server
+	allowedOrigins := []string{"http://localhost:5173", "http://lms-fe-demo-app.s3-website-ap-southeast-2.amazonaws.com"} // Fix later after deploy to cloud server (can remove aws origin)
 	allowedMethods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
 	allowedHeaders := []string{
 		"Authorization",
