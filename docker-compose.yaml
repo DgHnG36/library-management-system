@@ -88,8 +88,8 @@ services:
   user-service:
     image: dghug6305/lms-user-service:latest
     build:
-      context: ./services/user-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/user-service/Dockerfile
     container_name: lms-user-service
     ports:
       - "40041:40041"
@@ -126,8 +126,8 @@ services:
   book-service:
     image: dghug6305/lms-book-service:latest
     build:
-      context: ./services/book-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/book-service/Dockerfile
     container_name: lms-book-service
     ports:
       - "40042:40042"

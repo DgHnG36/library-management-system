@@ -35,5 +35,3 @@ RUN chmod +x /app/user-service
 
 EXPOSE 40041
 CMD ["./user-service"]
-
-

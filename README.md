@@ -99,8 +99,6 @@ curl -s -X POST http://localhost:8080/api/v1/auth/login \
   -d '{"username":"alice","password":"Password123!"}'
 ```
 
-> See [docs/curl-tests.md](./docs/curl-tests.md) for the full API test reference.
-
 ### Teardown
 
 ```bash
